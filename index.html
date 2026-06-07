@@ -28,8 +28,8 @@
   }
   .app {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: 1fr 1fr;
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
     height: 100vh;
     gap: 1px;
     background: var(--border);
@@ -62,7 +62,7 @@
     font-weight: 700;
   }
   /* Chat Panel */
-  #chat-panel { grid-column: 1; grid-row: 1 / 3; }
+  #chat-panel { grid-column: 1; grid-row: 1; }
   #messages {
     flex: 1;
     overflow-y: auto;
@@ -80,6 +80,20 @@
     white-space: pre-wrap;
     word-break: break-word;
   }
+  .msg.exec {
+    background: #1c2128;
+    border: 1px solid #30363d;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    max-height: 300px;
+    overflow-y: auto;
+    align-self: flex-start;
+    width: 100%;
+    max-width: 100%;
+  }
+  .msg.exec .exec-stdout { color: var(--text); }
+  .msg.exec .exec-stderr { color: var(--danger); }
+  .msg.exec .exec-system { color: var(--text-muted); font-style: italic; }
   .msg.user {
     background: #1f6feb33;
     align-self: flex-end;
@@ -144,161 +158,8 @@
   }
   .input-area button:hover { background: var(--accent-hover); }
   .input-area button:disabled { opacity: 0.5; cursor: not-allowed; }
-  /* Files Panel */
-  #files-panel { grid-column: 2; grid-row: 1; }
-  #files-content {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-  .file-tabs {
-    display: flex;
-    overflow-x: auto;
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-  }
-  .file-tab {
-    padding: 6px 12px;
-    font-size: 12px;
-    cursor: pointer;
-    border-right: 1px solid var(--border);
-    color: var(--text-muted);
-    white-space: nowrap;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-  .file-tab.active { background: var(--code-bg); color: var(--text); border-bottom: 2px solid var(--accent); }
-  .file-tab .close-btn {
-    font-size: 14px;
-    line-height: 1;
-    cursor: pointer;
-    opacity: 0.5;
-    margin-left: 4px;
-  }
-  .file-tab .close-btn:hover { opacity: 1; }
-  #editor-area {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-  #editor-area textarea {
-    flex: 1;
-    background: var(--code-bg);
-    border: none;
-    color: var(--text);
-    font-family: 'JetBrains Mono', 'Fira Code', monospace;
-    font-size: 13px;
-    padding: 12px;
-    resize: none;
-    tab-size: 2;
-    outline: none;
-  }
-  .editor-toolbar {
-    padding: 6px 12px;
-    border-top: 1px solid var(--border);
-    display: flex;
-    gap: 6px;
-    flex-shrink: 0;
-    align-items: center;
-  }
-  .editor-toolbar button {
-    background: var(--code-bg);
-    border: 1px solid var(--border);
-    color: var(--text);
-    padding: 4px 10px;
-    border-radius: 4px;
-    font-size: 11px;
-    cursor: pointer;
-  }
-  .editor-toolbar button:hover { border-color: var(--accent); color: var(--accent); }
-  .editor-toolbar .file-path {
-    color: var(--text-muted);
-    font-size: 11px;
-    font-family: monospace;
-    margin-left: auto;
-  }
-  /* File list sidebar */
-  #file-list {
-    width: 180px;
-    border-right: 1px solid var(--border);
-    overflow-y: auto;
-    flex-shrink: 0;
-    padding: 4px 0;
-  }
-  #file-list .file-item {
-    padding: 4px 12px;
-    font-size: 12px;
-    cursor: pointer;
-    color: var(--text-muted);
-    font-family: monospace;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  #file-list .file-item:hover { background: var(--code-bg); color: var(--text); }
-  #file-list .file-item .icon { font-size: 14px; }
-  #files-body {
-    flex: 1;
-    display: flex;
-    overflow: hidden;
-  }
   /* Execution Panel */
-  #exec-panel { grid-column: 2; grid-row: 2; }
-  #exec-content {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-  #exec-output {
-    flex: 1;
-    background: var(--code-bg);
-    font-family: 'JetBrains Mono', 'Fira Code', monospace;
-    font-size: 12px;
-    padding: 12px;
-    overflow-y: auto;
-    white-space: pre-wrap;
-    color: var(--text);
-    line-height: 1.5;
-  }
-  #exec-output .stdout { color: var(--text); }
-  #exec-output .stderr { color: var(--danger); }
-  #exec-output .system { color: var(--text-muted); font-style: italic; }
-  #exec-input-area {
-    padding: 6px 12px;
-    border-top: 1px solid var(--border);
-    display: flex;
-    gap: 6px;
-    flex-shrink: 0;
-  }
-  #exec-input-area textarea {
-    flex: 1;
-    background: var(--code-bg);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--text);
-    padding: 6px 8px;
-    font-family: 'JetBrains Mono', 'Fira Code', monospace;
-    font-size: 12px;
-    resize: none;
-    min-height: 32px;
-    max-height: 80px;
-  }
-  #exec-input-area textarea:focus { outline: none; border-color: var(--accent); }
-  #exec-input-area button {
-    background: var(--accent);
-    color: #000;
-    border: none;
-    border-radius: 4px;
-    padding: 6px 12px;
-    font-weight: 600;
-    cursor: pointer;
-    font-size: 12px;
-  }
-  #exec-input-area button:hover { background: var(--accent-hover); }
+  
   /* Settings */
   #settings-bar {
     padding: 6px 12px;
@@ -371,9 +232,7 @@
       min-height: 300px;
       flex-shrink: 0;
     }
-    #chat-panel { height: 60vh; min-height: 400px; }
-    #files-panel { height: 50vh; min-height: 300px; }
-    #exec-panel { height: 40vh; min-height: 250px; }
+    #chat-panel { height: 100vh; min-height: 100vh; }
 
     #settings-bar {
       flex-direction: column;
@@ -390,15 +249,12 @@
     #settings-bar select { width: 100% !important; }
     #settings-bar .btn-small { font-size: 10px; padding: 2px 6px; }
 
-    #file-list { width: 120px; }
-    .file-tab { font-size: 10px; padding: 4px 8px; }
-    .editor-toolbar button { font-size: 10px; padding: 3px 6px; }
+    
 
     .input-area textarea { font-size: 12px; min-height: 36px; }
     .input-area button { font-size: 12px; padding: 6px 12px; }
 
-    #exec-input-area textarea { font-size: 11px; }
-    #exec-input-area button { font-size: 11px; padding: 4px 8px; }
+    
 
     .msg { font-size: 12px; max-width: 95%; }
   }
@@ -406,12 +262,7 @@
   @media (max-width: 480px) {
     .panel-header { font-size: 10px; padding: 4px 8px; }
     .panel-header .badge { font-size: 8px; }
-    #chat-panel { height: 55vh; min-height: 350px; }
-    #files-panel { height: 45vh; min-height: 250px; }
-    #exec-panel { height: 35vh; min-height: 200px; }
-    #file-list { width: 100px; }
-    .file-item { font-size: 10px; padding: 3px 8px; }
-    #editor-area textarea { font-size: 11px; padding: 8px; }
+    #chat-panel { height: 100vh; min-height: 100vh; }
   }
 </style>
 </head>
@@ -428,7 +279,6 @@
       <label>Model <input type="text" id="model-select" value="gpt-4o" style="width:140px"></label>
       <label>API URL <select id="api-url-input" style="width:200px"></select></label>
       <button class="btn-small" id="clear-chat-btn">Clear Chat</button>
-      <button class="btn-small danger" id="reset-files-btn">Reset Files</button>
     </div>
     <div id="messages"></div>
     <div class="input-area">
@@ -437,44 +287,9 @@
     </div>
   </div>
 
-  <!-- Files Panel -->
-  <div class="panel" id="files-panel">
-    <div class="panel-header">
-      <span>📁 Files</span>
-      <span class="badge" id="file-count">0</span>
-    </div>
-    <div id="files-content">
-      <div id="files-body">
-        <div id="file-list"></div>
-        <div id="editor-area">
-          <div class="file-tabs" id="file-tabs"></div>
-          <textarea id="editor-textarea" placeholder="Select or create a file..."></textarea>
-          <div class="editor-toolbar">
-            <button id="new-file-btn">+ New</button>
-            <button id="save-file-btn">💾 Save</button>
-            <button id="delete-file-btn" class="danger">🗑 Delete</button>
-            <span class="file-path" id="current-path">—</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
+  <!-- Files Panel (removed) -->
 
-  <!-- Execution Panel -->
-  <div class="panel" id="exec-panel">
-    <div class="panel-header">
-      <span>⚡ Code Execution</span>
-      <span class="badge" id="exec-status">idle</span>
-    </div>
-    <div id="exec-content">
-      <div id="exec-output"></div>
-      <div id="exec-input-area">
-        <textarea id="exec-input" placeholder="Run JS code (or let the agent do it)..." rows="1"></textarea>
-        <button id="exec-run-btn">Run</button>
-        <button class="btn-small" id="exec-clear-btn">Clear</button>
-      </div>
-    </div>
-  </div>
+  <!-- Execution Panel (removed — exec results appear inline in chat) -->
 </div>
 
 <!-- Sandbox iframe (hidden) -->
@@ -506,7 +321,6 @@ function getFiles() {
 }
 function setFiles(files) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(files));
-  updateFileList();
 }
 function readFile(path) {
   const files = getFiles();
@@ -804,16 +618,24 @@ async function callLLM() {
 }
 
 function parseToolCalls(text) {
+  // Strip chat template artifacts like <|channel>thought<channel|> or <|im_start|> etc.
+  let cleaned = text.replace(/<\|?[^|>]+\|?>/g, '').trim();
+  // Strip any leading non-JSON text before the first { or [
+  const jsonStart = cleaned.search(/[\[{]/);
+  if (jsonStart > 0) {
+    cleaned = cleaned.slice(jsonStart);
+  }
+
   try {
     // Try to parse as JSON
-    const parsed = JSON.parse(text);
+    const parsed = JSON.parse(cleaned);
     return {
       message: parsed.message || '',
       tool_calls: parsed.tool_calls || []
     };
   } catch {
     // Try to extract JSON from markdown code block
-    const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const jsonMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
     if (jsonMatch) {
       try {
         const parsed = JSON.parse(jsonMatch[1]);
@@ -824,7 +646,7 @@ function parseToolCalls(text) {
       } catch {}
     }
     // Return raw text as message with no tool calls
-    return { message: text, tool_calls: [] };
+    return { message: cleaned || text, tool_calls: [] };
   }
 }
 
@@ -845,22 +667,21 @@ async function executeToolCall(tc) {
         result = strReplace(params.path, params.old_str, params.new_str);
         break;
       case 'execute_js':
-        setExecStatus('running');
-        appendExecOutput(`> Executing code...\n`, 'system');
         const execResult = await executeJS(params.code);
+        // Build inline exec message
+        let execLines = '';
         if (execResult.outputs && execResult.outputs.length > 0) {
-          execResult.outputs.forEach(o => {
-            appendExecOutput(o.text + '\n', o.type);
-          });
+          execLines = execResult.outputs.map(o => o.text).join('\n');
         }
         if (execResult.error) {
-          appendExecOutput(`Error: ${execResult.error}\n`, 'stderr');
+          execLines += (execLines ? '\n' : '') + `Error: ${execResult.error}`;
           result = { error: execResult.error, outputs: execResult.outputs };
         } else {
-          appendExecOutput(`→ Result: ${execResult.result}\n`, 'stdout');
+          execLines += (execLines ? '\n' : '') + `→ ${execResult.result}`;
           result = { result: execResult.result, outputs: execResult.outputs };
         }
-        setExecStatus('idle');
+        // Show exec output as a chat message with scrollable container
+        addExecMessage(execLines);
         break;
       case 'list_files':
         result = { files: listFiles() };
@@ -964,99 +785,13 @@ function renderMessages() {
   container.scrollTop = container.scrollHeight;
 }
 
-function updateFileList() {
-  const files = listFiles();
-  const list = document.getElementById('file-list');
-  list.innerHTML = '';
-  document.getElementById('file-count').textContent = files.length;
-
-  if (files.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'file-item';
-    empty.style.color = 'var(--text-muted)';
-    empty.style.fontStyle = 'italic';
-    empty.textContent = 'No files yet';
-    list.appendChild(empty);
-    return;
-  }
-
-  files.forEach(f => {
-    const item = document.createElement('div');
-    item.className = 'file-item';
-    const ext = f.split('.').pop();
-    const icon = ext === 'html' ? '🌐' : ext === 'js' ? '📜' : ext === 'css' ? '🎨' : ext === 'json' ? '📋' : '📄';
-    item.innerHTML = `<span class="icon">${icon}</span>${f}`;
-    item.onclick = () => openFile(f);
-    list.appendChild(item);
-  });
-}
-
-let openTabs = [];
-let activeTab = null;
-
-function openFile(path) {
-  const result = readFile(path);
-  if (result.error) return;
-
-  if (!openTabs.includes(path)) {
-    openTabs.push(path);
-  }
-  activeTab = path;
-  renderTabs();
-  document.getElementById('editor-textarea').value = result.content;
-  document.getElementById('current-path').textContent = path;
-}
-
-function renderTabs() {
-  const container = document.getElementById('file-tabs');
-  container.innerHTML = '';
-  openTabs.forEach(f => {
-    const tab = document.createElement('div');
-    tab.className = `file-tab${f === activeTab ? ' active' : ''}`;
-    tab.textContent = f.split('/').pop();
-    const close = document.createElement('span');
-    close.className = 'close-btn';
-    close.textContent = '×';
-    close.onclick = (e) => {
-      e.stopPropagation();
-      openTabs = openTabs.filter(t => t !== f);
-      if (activeTab === f) {
-        activeTab = openTabs.length > 0 ? openTabs[openTabs.length - 1] : null;
-        if (activeTab) {
-          const r = readFile(activeTab);
-          document.getElementById('editor-textarea').value = r.content || '';
-          document.getElementById('current-path').textContent = activeTab;
-        } else {
-          document.getElementById('editor-textarea').value = '';
-          document.getElementById('current-path').textContent = '—';
-        }
-      }
-      renderTabs();
-    };
-    tab.onclick = () => {
-      activeTab = f;
-      renderTabs();
-      const r = readFile(f);
-      document.getElementById('editor-textarea').value = r.content || '';
-      document.getElementById('current-path').textContent = f;
-    };
-    container.appendChild(tab);
-  });
-}
-
-function setExecStatus(status) {
-  const badge = document.getElementById('exec-status');
-  badge.textContent = status;
-  badge.style.color = status === 'running' ? 'var(--warning)' : status === 'idle' ? 'var(--text-muted)' : 'var(--text)';
-}
-
-function appendExecOutput(text, type = 'stdout') {
-  const output = document.getElementById('exec-output');
-  const span = document.createElement('span');
-  span.className = type;
-  span.textContent = text;
-  output.appendChild(span);
-  output.scrollTop = output.scrollHeight;
+function addExecMessage(text) {
+  const container = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.className = 'msg exec';
+  div.textContent = text;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
 }
 
 // ============================================================
@@ -1065,7 +800,6 @@ function appendExecOutput(text, type = 'stdout') {
 document.addEventListener('DOMContentLoaded', function() {
   loadSettings();
   loadMessages();
-  updateFileList();
   initSandbox();
 
   // Chat send
@@ -1094,89 +828,6 @@ document.addEventListener('DOMContentLoaded', function() {
     messages = [];
     saveMessages();
     renderMessages();
-  };
-
-  // Reset files
-  document.getElementById('reset-files-btn').onclick = () => {
-    if (confirm('Delete all files? This cannot be undone.')) {
-      setFiles({});
-      openTabs = [];
-      activeTab = null;
-      document.getElementById('editor-textarea').value = '';
-      document.getElementById('current-path').textContent = '—';
-      renderTabs();
-    }
-  };
-
-  // New file
-  document.getElementById('new-file-btn').onclick = () => {
-    const name = prompt('Enter file path (e.g., src/app.js):');
-    if (name) {
-      writeFile(name, '');
-      openFile(name);
-    }
-  };
-
-  // Save file
-  document.getElementById('save-file-btn').onclick = () => {
-    if (!activeTab) return;
-    const content = document.getElementById('editor-textarea').value;
-    writeFile(activeTab, content);
-    addMessage('system', `💾 Saved ${activeTab}`);
-  };
-
-  // Delete file
-  document.getElementById('delete-file-btn').onclick = () => {
-    if (!activeTab) return;
-    if (confirm(`Delete ${activeTab}?`)) {
-      deleteFile(activeTab);
-      openTabs = openTabs.filter(t => t !== activeTab);
-      activeTab = openTabs.length > 0 ? openTabs[openTabs.length - 1] : null;
-      if (activeTab) {
-        const r = readFile(activeTab);
-        document.getElementById('editor-textarea').value = r.content || '';
-        document.getElementById('current-path').textContent = activeTab;
-      } else {
-        document.getElementById('editor-textarea').value = '';
-        document.getElementById('current-path').textContent = '—';
-      }
-      renderTabs();
-    }
-  };
-
-  // Execute code
-  document.getElementById('exec-run-btn').onclick = async () => {
-    const input = document.getElementById('exec-input');
-    const code = input.value.trim();
-    if (!code) return;
-    appendExecOutput(`> ${code}\n`, 'system');
-    setExecStatus('running');
-    try {
-      const result = await executeJS(code);
-      if (result.outputs) {
-        result.outputs.forEach(o => appendExecOutput(o.text + '\n', o.type));
-      }
-      if (result.error) {
-        appendExecOutput(`Error: ${result.error}\n`, 'stderr');
-      } else {
-        appendExecOutput(`→ ${result.result}\n`, 'stdout');
-      }
-    } catch (err) {
-      appendExecOutput(`Error: ${err.message}\n`, 'stderr');
-    }
-    setExecStatus('idle');
-    input.value = '';
-  };
-
-  document.getElementById('exec-input').onkeydown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      document.getElementById('exec-run-btn').click();
-    }
-  };
-
-  document.getElementById('exec-clear-btn').onclick = () => {
-    document.getElementById('exec-output').innerHTML = '';
   };
 
   // Keyboard shortcut: Ctrl+Enter to send from chat
