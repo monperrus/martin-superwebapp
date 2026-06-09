@@ -777,7 +777,9 @@ async function executeToolCall(tc) {
           if (execResult.result !== 'undefined') {
             execLines += (execLines ? '\n' : '') + `→ ${execResult.result}`;
           }
-          result = { result: execResult.result, outputs: execResult.outputs };
+          result = execResult.result === 'undefined'
+            ? { outputs: execResult.outputs }
+            : { result: execResult.result, outputs: execResult.outputs };
         }
         addExecMessage(execLines);
         break;
