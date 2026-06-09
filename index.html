@@ -541,6 +541,7 @@ const SYSTEM_PROMPT = `You are a browser-based coding agent. You have access to 
 ## Execution environment
 - Code runs in a BROWSER context (Chrome). No Node.js APIs: no require(), no import(), no fs, no process.
 - Top-level await is supported. All browser APIs (fetch, DOM, console, etc.) are available.
+- window.document IS this page — you can read and manipulate the JsChat UI itself via the DOM.
 - To run a file you previously wrote, use execute_file(path, extra_code). It loads the file then runs extra_code in the same scope.
 
 ## Guidelines:
