@@ -561,35 +561,6 @@ const TOOLS = [
   {
     type: "function",
     function: {
-      name: "read_file",
-      description: "Read the contents of a file. Returns the file content or an error.",
-      parameters: {
-        type: "object",
-        properties: {
-          path: { type: "string", description: "Path to the file." }
-        },
-        required: ["path"]
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "write_file",
-      description: "Create or overwrite a file with the given content.",
-      parameters: {
-        type: "object",
-        properties: {
-          path: { type: "string", description: "Path to the file." },
-          content: { type: "string", description: "Content to write." }
-        },
-        required: ["path", "content"]
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
       name: "str_replace",
       description: "Replace the FIRST occurrence of old_str with new_str in the specified file. Use this for making targeted edits.",
       parameters: {
@@ -607,7 +578,7 @@ const TOOLS = [
     type: "function",
     function: {
       name: "execute_js",
-      description: "Execute JavaScript code in a browser (Chrome) environment. All browser APIs are available (DOM, fetch, console, etc.). Top-level await is supported. No Node.js APIs — no require(), no import(), no fs.",
+      description: "Execute JavaScript code in the browser. You have full access to browser APIs: DOM manipulation (document.querySelector, createElement, appendChild), fetch/XMLHttpRequest for HTTP requests, localStorage/sessionStorage, IndexedDB, Canvas, WebGL, Web Workers, crypto, and more. Top-level await is supported. Examples: `document.title` to read the page title; `await fetch('https://api.example.com/data').then(r=>r.json())` to make an HTTP request; `document.body.style.background='red'` to modify the page; `localStorage.setItem('key','val')` to store data. No Node.js APIs — no require(), no import(), no fs.",
       parameters: {
         type: "object",
         properties: {
@@ -782,12 +753,6 @@ async function executeToolCall(tc) {
   try {
     let result;
     switch (tool) {
-      case 'read_file':
-        result = readFile(params.path);
-        break;
-      case 'write_file':
-        result = writeFile(params.path, params.content);
-        break;
       case 'str_replace':
         result = strReplace(params.path, params.old_str, params.new_str);
         break;
