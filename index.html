@@ -557,6 +557,15 @@ const SYSTEM_PROMPT = `You are a browser-based coding agent. You have access to 
 - You can create HTML files and open them in a new tab using: window.open(URL.createObjectURL(new Blob([content], {type:'text/html'})))
 - Be thorough and test your work.`;
 
+const _browserGlobals = Object.getOwnPropertyNames(window)
+  .filter(k => {
+    if (k.startsWith('on') || k.startsWith('webkit')) return false;
+    try { const v = window[k]; return typeof v === 'function' || (typeof v === 'object' && v !== null); } catch { return false; }
+  })
+  .filter(k => /^[A-Z]/.test(k))
+  .sort()
+  .join(', ');
+
 const TOOLS = [
   {
     type: "function",
@@ -578,7 +587,7 @@ const TOOLS = [
     type: "function",
     function: {
       name: "execute_js",
-      description: "Execute JavaScript code in the browser. You have full access to browser APIs: DOM manipulation (document.querySelector, createElement, appendChild), fetch/XMLHttpRequest for HTTP requests, localStorage/sessionStorage, IndexedDB, Canvas, WebGL, Web Workers, crypto, and more. Top-level await is supported. Examples: `document.title` to read the page title; `await fetch('https://api.example.com/data').then(r=>r.json())` to make an HTTP request; `document.body.style.background='red'` to modify the page; `localStorage.setItem('key','val')` to store data. No Node.js APIs — no require(), no import(), no fs.",
+      description: `Execute JavaScript code in the browser. Top-level await is supported. Available global objects: ${_browserGlobals}. Examples: \`document.title\` to read the page title; \`await fetch('https://api.example.com/data').then(r=>r.json())\` to make an HTTP request; \`document.body.style.background='red'\` to modify the page; \`localStorage.setItem('key','val')\` to store data. No Node.js APIs — no require(), no import(), no fs.`,
       parameters: {
         type: "object",
         properties: {
