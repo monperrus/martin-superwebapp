@@ -1,4 +1,4 @@
-const CACHE_NAME = 'jschat-v1';
+const CACHE_NAME = 'superapp-v1';
 const APP_ASSETS = [
   './',
   './index.html',

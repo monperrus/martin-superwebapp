@@ -3,477 +3,453 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>JsChat</title>
+<title>Martin's Super Webapp</title>
 <meta name="theme-color" content="#0d1117">
-<meta name="description" content="JsChat is a browser-based coding agent that runs entirely in your browser.">
+<meta name="description" content="Martin's personal mobile-first progressive web app, self-built with AI.">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon.svg">
 <style>
-  :root {
-    --bg: #0d1117;
-    --surface: #161b22;
-    --border: #30363d;
-    --text: #c9d1d9;
-    --text-muted: #8b949e;
-    --accent: #58a6ff;
-    --accent-hover: #79c0ff;
-    --danger: #f85149;
-    --success: #3fb950;
-    --warning: #d29922;
-    --code-bg: #1c2128;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    height: 100vh;
-    overflow: hidden;
-  }
-  .app {
-    display: grid;
-    grid-template-columns: 1fr;
-    grid-template-rows: 1fr;
-    height: 100vh;
-    gap: 1px;
-    background: var(--border);
-  }
-  .panel {
-    background: var(--surface);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-  .panel-header {
-    padding: 8px 12px;
-    font-size: 12px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--text-muted);
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-shrink: 0;
-  }
-  .panel-header .badge {
-    font-size: 10px;
-    background: var(--accent);
-    color: #000;
-    padding: 1px 6px;
-    border-radius: 8px;
-    font-weight: 700;
-  }
-  /* Chat Panel */
-  #chat-panel { grid-column: 1; grid-row: 1; }
-  #messages {
-    flex: 1;
-    overflow-y: auto;
-    padding: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .msg {
-    padding: 8px 12px;
-    border-radius: 8px;
-    font-size: 13px;
-    line-height: 1.5;
-    max-width: 90%;
-    white-space: pre-wrap;
-    word-break: break-word;
-    flex-shrink: 0;
-  }
-  .msg.exec {
-    background: #1c2128;
-    border: 1px solid #30363d;
-    font-family: 'JetBrains Mono', 'Fira Code', monospace;
-    font-size: 12px;
-    max-height: calc(7 * 18px + 16px);
-    overflow-y: auto;
-    align-self: flex-start;
-    width: 100%;
-    max-width: 100%;
-  }
-  .msg.exec.code { max-height: calc(7 * 18px + 16px); }
-  .msg.exec .exec-stdout { color: var(--text); }
-  .msg.exec .exec-stderr { color: var(--danger); }
-  .msg.exec .exec-system { color: var(--text-muted); font-style: italic; }
-  .msg.user {
-    background: #1f6feb33;
-    align-self: flex-end;
-    border: 1px solid #1f6feb44;
-  }
-  .msg.assistant {
-    background: var(--code-bg);
-    align-self: flex-start;
-    border: 1px solid var(--border);
-  }
-  .msg.tool {
-    background: #3fb95022;
-    align-self: flex-start;
-    border: 1px solid #3fb95033;
-    font-family: 'JetBrains Mono', 'Fira Code', monospace;
-    font-size: 12px;
-  }
-  .msg.error {
-    background: #f8514922;
-    align-self: flex-start;
-    border: 1px solid #f8514933;
-  }
-  .msg .tool-name {
-    font-weight: 600;
-    color: var(--accent);
-  }
-  .msg .tool-result {
-    margin-top: 4px;
-    color: var(--text-muted);
-  }
-  .input-area {
-    padding: 8px 12px;
-    border-top: 1px solid var(--border);
-    display: flex;
-    gap: 8px;
-    flex-shrink: 0;
-  }
-  .input-area textarea {
-    flex: 1;
-    background: var(--code-bg);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    color: var(--text);
-    padding: 8px;
-    font-size: 13px;
-    font-family: inherit;
-    resize: none;
-    min-height: 40px;
-    max-height: 120px;
-  }
-  .input-area textarea:focus { outline: none; border-color: var(--accent); }
-  .input-area button {
-    background: var(--accent);
-    color: #000;
-    border: none;
-    border-radius: 6px;
-    padding: 8px 16px;
-    font-weight: 600;
-    cursor: pointer;
-    font-size: 13px;
-    white-space: nowrap;
-  }
-  .input-area button:hover { background: var(--accent-hover); }
-  .input-area button:disabled { opacity: 0.5; cursor: not-allowed; }
-  /* Execution Panel */
-  
-  /* Settings */
-  #settings-bar {
-    padding: 6px 12px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    flex-shrink: 1;
-    flex-wrap: wrap;
-    overflow-y: auto;
-    max-height: 40vh;
-  }
-  #settings-bar label {
-    font-size: 11px;
-    color: var(--text-muted);
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-  #settings-bar input, #settings-bar select {
-    background: var(--code-bg);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--text);
-    padding: 3px 6px;
-    font-size: 11px;
-    font-family: monospace;
-  }
-  #settings-bar input:focus, #settings-bar select:focus { outline: none; border-color: var(--accent); }
-  #settings-bar input[type="password"] { width: 200px; }
-  #settings-bar select { width: 140px; }
-  .btn-small {
-    background: var(--code-bg);
-    border: 1px solid var(--border);
-    color: var(--text);
-    padding: 3px 8px;
-    border-radius: 4px;
-    font-size: 11px;
-    cursor: pointer;
-  }
-  .btn-small:hover { border-color: var(--accent); color: var(--accent); }
-  .btn-small.danger:hover { border-color: var(--danger); color: var(--danger); }
-  /* Scrollbar */
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
-  /* Loading dots */
-  .loading::after {
-    content: '';
-    animation: dots 1.5s steps(4, end) infinite;
-  }
-  @keyframes dots {
-    0% { content: ''; }
-    25% { content: '.'; }
-    50% { content: '..'; }
-    75% { content: '...'; }
-  }
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --text-muted: #8b949e;
+  --accent: #58a6ff;
+  --accent-hover: #79c0ff;
+  --danger: #f85149;
+  --success: #3fb950;
+  --code-bg: #1c2128;
+  --nav-h: 56px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100dvh;
+  overflow: hidden;
+}
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
 
-  /* ── Mobile / narrow portrait layout ─────────────────────────── */
-  @media (max-width: 768px) {
-    body { overflow: auto; }
-    .app {
-      display: flex;
-      flex-direction: column;
-      height: auto;
-      min-height: 100vh;
-      gap: 0;
-    }
-    .panel {
-      height: 50vh;
-      min-height: 300px;
-      flex-shrink: 0;
-    }
-    #chat-panel { height: 100vh; min-height: 100vh; }
+/* ── Tab content area ─────────────────────────────────────── */
+#tab-content {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+.tab-pane {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+}
+.tab-pane.active { display: flex; }
+.tab-pane iframe { flex: 1; width: 100%; border: none; min-height: 0; display: block; }
 
-    #settings-bar {
-      flex-direction: column;
-      align-items: stretch;
-      gap: 4px;
-      padding: 6px 8px;
-    }
-    #settings-bar label {
-      flex-wrap: wrap;
-      font-size: 10px;
-    }
-    #settings-bar input[type="password"] { width: 100%; }
-    #settings-bar input[type="text"] { width: 100% !important; }
-    #settings-bar select { width: 100% !important; }
-    #settings-bar .btn-small { font-size: 10px; padding: 2px 6px; }
-    #settings-bar #config-name-input { width: 100% !important; }
+/* ── Bottom nav ───────────────────────────────────────────── */
+.bottom-nav {
+  height: var(--nav-h);
+  flex-shrink: 0;
+  display: flex;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.bottom-nav::-webkit-scrollbar { display: none; }
+.nav-btn {
+  flex: 1;
+  min-width: 60px;
+  max-width: 120px;
+  background: none;
+  border: none;
+  border-top: 2px solid transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 4px 6px 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.nav-btn.active { color: var(--accent); border-top-color: var(--accent); }
+.nav-btn:hover { color: var(--text); }
+.nav-btn .nav-icon { font-size: 18px; line-height: 1.2; }
+.nav-btn .nav-label { font-size: 10px; overflow: hidden; text-overflow: ellipsis; max-width: 90px; }
 
-    
+/* ── Build pane ───────────────────────────────────────────── */
+.panel-header {
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  cursor: pointer;
+  user-select: none;
+}
+.panel-header .badge {
+  font-size: 10px;
+  background: var(--accent);
+  color: #000;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-weight: 700;
+}
+#messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.msg {
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 90%;
+  white-space: pre-wrap;
+  word-break: break-word;
+  flex-shrink: 0;
+}
+.msg.user { background: #1f6feb33; align-self: flex-end; border: 1px solid #1f6feb44; }
+.msg.assistant { background: var(--code-bg); align-self: flex-start; border: 1px solid var(--border); }
+.msg.tool {
+  background: #3fb95022;
+  align-self: flex-start;
+  border: 1px solid #3fb95033;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  width: 100%;
+  max-width: 100%;
+}
+.msg.exec {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  max-height: 140px;
+  overflow-y: auto;
+  align-self: flex-start;
+  width: 100%;
+  max-width: 100%;
+}
+.msg.system { background: #30363d33; align-self: center; border: 1px solid var(--border); font-size: 12px; color: var(--text-muted); max-width: 100%; }
+.msg.error { background: #f8514922; align-self: flex-start; border: 1px solid #f8514933; }
+.input-area {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.input-area textarea {
+  flex: 1;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 8px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: none;
+  min-height: 44px;
+  max-height: 120px;
+}
+.input-area textarea:focus { outline: none; border-color: var(--accent); }
+.input-area button {
+  background: var(--accent);
+  color: #000;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+  min-height: 44px;
+}
+.input-area button:hover { background: var(--accent-hover); }
+.input-area button:disabled { opacity: 0.5; cursor: not-allowed; }
 
-    .input-area textarea { font-size: 12px; min-height: 36px; }
-    .input-area button { font-size: 12px; padding: 6px 12px; }
+/* ── Settings bar ─────────────────────────────────────────── */
+#settings-bar {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  overflow-y: auto;
+  max-height: 40vh;
+}
+#settings-bar label { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 4px; }
+#settings-bar input, #settings-bar select {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  padding: 3px 6px;
+  font-size: 11px;
+  font-family: monospace;
+}
+#settings-bar input:focus, #settings-bar select:focus { outline: none; border-color: var(--accent); }
+#settings-bar input[type="password"] { width: 180px; }
+#settings-bar select { width: 140px; }
+.btn-small {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  min-height: 28px;
+}
+.btn-small:hover { border-color: var(--accent); color: var(--accent); }
+.btn-small.danger:hover { border-color: var(--danger); color: var(--danger); }
 
-    
+/* ── History bottom sheet ─────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: none;
+  align-items: flex-end;
+  z-index: 100;
+}
+.modal-overlay.open { display: flex; }
+.modal-sheet {
+  width: 100%;
+  max-height: 75vh;
+  background: var(--surface);
+  border-radius: 14px 14px 0 0;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+.modal-header {
+  padding: 12px 16px;
+  font-weight: 600;
+  font-size: 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.modal-body { overflow-y: auto; flex: 1; padding: 10px; }
+.history-item {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.history-item .h-meta { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); }
+.history-item .h-tabs { font-size: 12px; color: var(--text); }
+.history-empty { padding: 20px; text-align: center; color: var(--text-muted); font-size: 13px; }
 
-    .msg { font-size: 12px; max-width: 95%; }
-  }
+/* ── Scrollbar ────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
-  @media (max-width: 480px) {
-    .panel-header { font-size: 10px; padding: 4px 8px; }
-    .panel-header .badge { font-size: 8px; }
-    #chat-panel { height: 100vh; min-height: 100vh; }
-  }
+/* ── Loading animation ────────────────────────────────────── */
+.loading::after { content: ''; animation: dots 1.5s steps(4, end) infinite; }
+@keyframes dots { 0%{content:''} 25%{content:'.'} 50%{content:'..'} 75%{content:'...'} }
 </style>
 </head>
 <body>
-<div class="app" id="app">
-  <!-- Chat Panel -->
-  <div class="panel" id="chat-panel">
-    <div class="panel-header" id="panel-header" style="cursor:pointer">
-      <span>💬 JsChat</span>
-      <span class="badge" id="model-badge">agent</span>
-      <button class="btn-small" id="clear-chat-btn" style="margin-left:auto">Clear Chat</button>
+<div class="app">
+  <div id="tab-content">
+
+    <!-- Build pane (always present) -->
+    <div class="tab-pane active" id="pane-build">
+      <div class="panel-header" id="panel-header">
+        <span>🔧 Build</span>
+        <span class="badge" id="model-badge">agent</span>
+        <div style="display:flex;gap:6px;margin-left:auto" onclick="event.stopPropagation()">
+          <button class="btn-small" id="history-btn">History</button>
+          <button class="btn-small" id="clear-chat-btn">Clear</button>
+        </div>
+      </div>
+      <div id="settings-bar" style="display:none">
+        <label>Config <select id="config-select" style="width:150px"></select></label>
+        <button class="btn-small" id="save-config-btn">Save</button>
+        <button class="btn-small danger" id="delete-config-btn">Delete</button>
+        <label>Name <input type="text" id="config-name-input" placeholder="my-config" style="width:90px"></label>
+        <label>API Key <input type="password" id="api-key-input" placeholder="sk-..."></label>
+        <label>Model <input type="text" id="model-select" value="gpt-4o" style="width:130px"></label>
+        <label>API URL <select id="api-url-input" style="width:190px"></select></label>
+      </div>
+      <div id="messages"></div>
+      <div class="input-area">
+        <textarea id="chat-input" placeholder="Ask the AI to build a new tab…" rows="2"></textarea>
+        <button id="send-btn">Send</button>
+      </div>
     </div>
-    <div id="settings-bar" style="display:none">
-      <label>Config <select id="config-select" style="width:160px"></select></label>
-      <button class="btn-small" id="save-config-btn">💾 Save</button>
-      <button class="btn-small danger" id="delete-config-btn">🗑 Delete</button>
-      <label>Name <input type="text" id="config-name-input" placeholder="my-config" style="width:100px"></label>
-      <label>API Key <input type="password" id="api-key-input" placeholder="sk-..."></label>
-      <label>Model <input type="text" id="model-select" value="gpt-4o" style="width:140px"></label>
-      <label>API URL <select id="api-url-input" style="width:200px"></select></label>
-    </div>
-    <div id="messages"></div>
-    <div class="input-area">
-      <textarea id="chat-input" placeholder="Ask the agent to write code..." rows="2"></textarea>
-      <button id="send-btn">Send</button>
-    </div>
+    <!-- Dynamic tab panes are injected here by JS -->
+
   </div>
 
-  <!-- Files Panel (removed) -->
-
-  <!-- Execution Panel (removed — exec results appear inline in chat) -->
+  <nav class="bottom-nav" id="bottom-nav">
+    <!-- Dynamic tab buttons inserted before Build -->
+    <button class="nav-btn active" data-tab="build" id="nav-btn-build">
+      <span class="nav-icon">🔧</span>
+      <span class="nav-label">Build</span>
+    </button>
+  </nav>
 </div>
 
+<!-- History bottom sheet -->
+<div class="modal-overlay" id="history-modal" onclick="closeHistoryModal()">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span>Version History</span>
+      <button class="btn-small" onclick="closeHistoryModal()">✕</button>
+    </div>
+    <div class="modal-body" id="history-list"></div>
+  </div>
+</div>
 
 <script>
 // ============================================================
-// 1. STORAGE LAYER (localStorage-backed file system)
+// 1. STORAGE — tabs + version history
 // ============================================================
-const STORAGE_KEY = 'agent_files';
-const API_KEY_KEY = 'agent_api_key';
-const MSGS_KEY = 'agent_messages';
-const MODEL_KEY = 'agent_model';
-const API_URL_KEY = 'agent_api_url';
-const CONFIGS_KEY = 'agent_configs';
-const ACTIVE_CONFIG_KEY = 'agent_active_config';
+const TABS_KEY        = 'msw_tabs';
+const HISTORY_KEY     = 'msw_history';
+const API_KEY_KEY     = 'agent_api_key';
+const MSGS_KEY        = 'agent_messages';
+const MODEL_KEY       = 'agent_model';
+const API_URL_KEY     = 'agent_api_url';
+const CONFIGS_KEY     = 'agent_configs';
+const ACTIVE_CFG_KEY  = 'agent_active_config';
+const MAX_HISTORY     = 50;
 
-// Inference URLs extracted from agent_probe JSON spec files
-const INFERENCE_URLS = [
-  "https://openrouter.ai/api/v1",
-  "https://assert-service.services.ai.azure.com/openai/deployments/deepseek-v4-flash?api-version=2024-12-01-preview",
-  "https://assert-service.services.ai.azure.com/openai/deployments/kimi-k2.6?api-version=2024-12-01-preview",
-  "https://integrate.api.nvidia.com/v1",
-  "https://api.modelstream.ai/v1",
-  "https://opencode.ai/zen/v1",
-  "https://gpu1.eecs.kth.se/services/ollama-keys/v1"
-];
-
-function getFiles() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; }
+function getTabs() {
+  try { return JSON.parse(localStorage.getItem(TABS_KEY)) || []; } catch { return []; }
 }
-function setFiles(files) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(files));
+function setTabs(tabs) {
+  localStorage.setItem(TABS_KEY, JSON.stringify(tabs));
 }
-function readFile(path) {
-  const files = getFiles();
-  if (files[path] === undefined) return { error: `File not found: ${path}` };
-  return { content: files[path] };
+function saveSnapshot() {
+  const history = getHistory();
+  history.unshift({ timestamp: Date.now(), tabs: JSON.parse(JSON.stringify(getTabs())) });
+  if (history.length > MAX_HISTORY) history.length = MAX_HISTORY;
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
 }
-function writeFile(path, content) {
-  const files = getFiles();
-  files[path] = content;
-  setFiles(files);
-  return { success: true, path };
-}
-function deleteFile(path) {
-  const files = getFiles();
-  if (files[path] === undefined) return { error: `File not found: ${path}` };
-  delete files[path];
-  setFiles(files);
-  return { success: true, path };
-}
-function strReplace(path, oldStr, newStr) {
-  const files = getFiles();
-  if (files[path] === undefined) return { error: `File not found: ${path}` };
-  const content = files[path];
-  const idx = content.indexOf(oldStr);
-  if (idx === -1) return { error: `String not found in ${path}` };
-  files[path] = content.substring(0, idx) + newStr + content.substring(idx + oldStr.length);
-  setFiles(files);
-  return { success: true, path, replaced: oldStr.length, newLength: files[path].length };
-}
-function listFiles() {
-  return Object.keys(getFiles()).sort();
+function getHistory() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; } catch { return []; }
 }
 
 // ============================================================
-// 2. SANDBOXED CODE EXECUTION
+// 2. SANDBOXED JS EXECUTION
 // ============================================================
 const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
-
-function formatResult(r) {
-  if (r === undefined) return 'undefined';
-  if (r === null) return 'null';
-  try { return JSON.stringify(r, null, 2); } catch { return String(r); }
-}
 
 async function executeJS(code) {
   const outputs = [];
   const origConsole = {};
-  const methods = ['log','info','warn','error','debug','dir','table'];
-  methods.forEach(m => {
+  ['log','info','warn','error','debug','dir','table'].forEach(m => {
     origConsole[m] = console[m];
-    console[m] = function(...args) {
+    console[m] = (...args) => {
       outputs.push({ type: m === 'error' ? 'stderr' : 'stdout', text: args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ') });
       origConsole[m].apply(console, args);
     };
   });
   try {
-    const fn = new AsyncFunction('"use strict"; ' + code);
+    const fn = new AsyncFunction('"use strict";\n' + code);
     const result = await fn();
-    return { result: formatResult(result), outputs, error: null };
+    const r = result === undefined ? 'undefined' : (() => { try { return JSON.stringify(result, null, 2); } catch { return String(result); } })();
+    return { result: r, outputs, error: null };
   } catch (err) {
     return { result: null, outputs, error: err.stack || err.message };
   } finally {
-    methods.forEach(m => { console[m] = origConsole[m]; });
+    ['log','info','warn','error','debug','dir','table'].forEach(m => { console[m] = origConsole[m]; });
   }
 }
 
 // ============================================================
-// 3. CHAT / LLM INTEGRATION
+// 3. CHAT / LLM
 // ============================================================
 let messages = [];
 let isProcessing = false;
 
-// ── Config management (multiple saved configs) ──────────────
-function getConfigs() {
-  try { return JSON.parse(localStorage.getItem(CONFIGS_KEY)) || {}; } catch { return {}; }
-}
-function setConfigs(configs) {
-  localStorage.setItem(CONFIGS_KEY, JSON.stringify(configs));
-}
-function getActiveConfigName() {
-  return localStorage.getItem(ACTIVE_CONFIG_KEY) || '';
-}
-function setActiveConfigName(name) {
-  localStorage.setItem(ACTIVE_CONFIG_KEY, name);
-}
+// ── Config management ────────────────────────────────────────
+function getConfigs() { try { return JSON.parse(localStorage.getItem(CONFIGS_KEY)) || {}; } catch { return {}; } }
+function setConfigs(c) { localStorage.setItem(CONFIGS_KEY, JSON.stringify(c)); }
+function getActiveCfgName() { return localStorage.getItem(ACTIVE_CFG_KEY) || ''; }
+function setActiveCfgName(n) { localStorage.setItem(ACTIVE_CFG_KEY, n); }
 
 function populateConfigSelect() {
-  const select = document.getElementById('config-select');
+  const sel = document.getElementById('config-select');
   const configs = getConfigs();
-  const activeName = getActiveConfigName();
-  select.innerHTML = '';
-  // Add a "Manual" entry for unsaved settings
-  const manualOpt = document.createElement('option');
-  manualOpt.value = '';
-  manualOpt.textContent = '— Manual —';
-  if (!activeName || !configs[activeName]) manualOpt.selected = true;
-  select.appendChild(manualOpt);
+  const active = getActiveCfgName();
+  sel.innerHTML = '';
+  const manual = document.createElement('option');
+  manual.value = ''; manual.textContent = '— Manual —';
+  if (!active || !configs[active]) manual.selected = true;
+  sel.appendChild(manual);
   Object.keys(configs).sort().forEach(name => {
     const opt = document.createElement('option');
-    opt.value = name;
-    opt.textContent = name;
-    if (name === activeName) opt.selected = true;
-    select.appendChild(opt);
+    opt.value = name; opt.textContent = name;
+    if (name === active) opt.selected = true;
+    sel.appendChild(opt);
   });
 }
 
 function loadConfig(name) {
-  const configs = getConfigs();
-  const config = configs[name];
-  if (!config) return false;
-  document.getElementById('api-key-input').value = config.apiKey || '';
-  document.getElementById('model-select').value = config.model || 'gpt-4o';
-  // Set API URL in dropdown
-  const urlSelect = document.getElementById('api-url-input');
-  const url = config.apiUrl || INFERENCE_URLS[0];
-  for (let opt of urlSelect.options) {
-    if (opt.value === url) { opt.selected = true; break; }
-  }
-  // Also update the model badge
-  document.getElementById('model-badge').textContent = config.model || 'gpt-4o';
-  // Save to individual storage keys for backward compat
-  localStorage.setItem(API_KEY_KEY, config.apiKey || '');
-  localStorage.setItem(MODEL_KEY, config.model || 'gpt-4o');
+  const cfg = getConfigs()[name];
+  if (!cfg) return false;
+  document.getElementById('api-key-input').value = cfg.apiKey || '';
+  document.getElementById('model-select').value = cfg.model || 'gpt-4o';
+  const urlSel = document.getElementById('api-url-input');
+  const url = cfg.apiUrl || INFERENCE_URLS[0];
+  for (const opt of urlSel.options) { if (opt.value === url) { opt.selected = true; break; } }
+  document.getElementById('model-badge').textContent = cfg.model || 'gpt-4o';
+  localStorage.setItem(API_KEY_KEY, cfg.apiKey || '');
+  localStorage.setItem(MODEL_KEY, cfg.model || 'gpt-4o');
   localStorage.setItem(API_URL_KEY, url);
-  setActiveConfigName(name);
+  setActiveCfgName(name);
   return true;
 }
 
 function saveCurrentAsConfig(name) {
-  if (!name || !name.trim()) return false;
+  if (!name?.trim()) return false;
   name = name.trim();
   const configs = getConfigs();
   configs[name] = {
     apiKey: document.getElementById('api-key-input').value,
-    model: document.getElementById('model-select').value,
+    model:  document.getElementById('model-select').value,
     apiUrl: document.getElementById('api-url-input').value
   };
   setConfigs(configs);
-  setActiveConfigName(name);
+  setActiveCfgName(name);
   populateConfigSelect();
   return true;
 }
@@ -484,333 +460,284 @@ function deleteConfig(name) {
   if (!configs[name]) return false;
   delete configs[name];
   setConfigs(configs);
-  if (getActiveConfigName() === name) {
-    setActiveConfigName('');
-  }
+  if (getActiveCfgName() === name) setActiveCfgName('');
   populateConfigSelect();
   return true;
 }
 
+const INFERENCE_URLS = [
+  "https://openrouter.ai/api/v1",
+  "https://assert-service.services.ai.azure.com/openai/deployments/deepseek-v4-flash?api-version=2024-12-01-preview",
+  "https://assert-service.services.ai.azure.com/openai/deployments/kimi-k2.6?api-version=2024-12-01-preview",
+  "https://integrate.api.nvidia.com/v1",
+  "https://api.modelstream.ai/v1",
+  "https://opencode.ai/zen/v1",
+  "https://gpu1.eecs.kth.se/services/ollama-keys/v1"
+];
+
 function loadSettings() {
-  // Populate API URL dropdown
-  const urlSelect = document.getElementById('api-url-input');
-  urlSelect.innerHTML = '';
+  const urlSel = document.getElementById('api-url-input');
+  urlSel.innerHTML = '';
   INFERENCE_URLS.forEach(url => {
     const opt = document.createElement('option');
-    opt.value = url;
-    opt.textContent = url;
-    urlSelect.appendChild(opt);
+    opt.value = url; opt.textContent = url;
+    urlSel.appendChild(opt);
   });
-
-  // Try loading the active config first
-  const activeName = getActiveConfigName();
+  const activeName = getActiveCfgName();
   const configs = getConfigs();
   if (activeName && configs[activeName]) {
     loadConfig(activeName);
   } else {
-    // Fall back to individual storage keys
-    const savedKey = localStorage.getItem(API_KEY_KEY) || '';
-    const savedModel = localStorage.getItem(MODEL_KEY) || 'gpt-4o';
+    document.getElementById('api-key-input').value = localStorage.getItem(API_KEY_KEY) || '';
+    document.getElementById('model-select').value  = localStorage.getItem(MODEL_KEY)   || 'gpt-4o';
     const savedUrl = localStorage.getItem(API_URL_KEY) || INFERENCE_URLS[0];
-    document.getElementById('api-key-input').value = savedKey;
-    document.getElementById('model-select').value = savedModel;
-    for (let opt of urlSelect.options) {
-      if (opt.value === savedUrl) { opt.selected = true; break; }
-    }
-    document.getElementById('model-badge').textContent = savedModel;
+    for (const opt of urlSel.options) { if (opt.value === savedUrl) { opt.selected = true; break; } }
+    document.getElementById('model-badge').textContent = localStorage.getItem(MODEL_KEY) || 'gpt-4o';
   }
-
   populateConfigSelect();
 }
 
 function saveSettings() {
-  // Save to individual storage keys for backward compat
   localStorage.setItem(API_KEY_KEY, document.getElementById('api-key-input').value);
-  localStorage.setItem(MODEL_KEY, document.getElementById('model-select').value);
+  localStorage.setItem(MODEL_KEY,   document.getElementById('model-select').value);
   localStorage.setItem(API_URL_KEY, document.getElementById('api-url-input').value);
   document.getElementById('model-badge').textContent = document.getElementById('model-select').value;
 }
 
 function loadMessages() {
-  try {
-    messages = JSON.parse(localStorage.getItem(MSGS_KEY)) || [];
-  } catch { messages = []; }
+  try { messages = JSON.parse(localStorage.getItem(MSGS_KEY)) || []; } catch { messages = []; }
   renderMessages();
 }
-function saveMessages() {
-  localStorage.setItem(MSGS_KEY, JSON.stringify(messages));
-}
+function saveMessages() { localStorage.setItem(MSGS_KEY, JSON.stringify(messages)); }
 
-const SYSTEM_PROMPT = `You are a browser-based coding agent. You have access to tools for reading/writing files, executing JavaScript, and more. Use the provided tools to complete the user's request. When finished, call the finish tool.
+// ── System prompt ────────────────────────────────────────────
+const SYSTEM_PROMPT = `You are the AI builder for Martin's Super Webapp — a mobile-first PWA. Your role is to create and modify tabs using the tools provided. Each tab is a self-contained HTML page displayed in an iframe.
 
-## Execution environment
-- Code runs in a BROWSER context (Chrome). No Node.js APIs: no require(), no import(), no fs, no process.
-- Top-level await is supported. All browser APIs (fetch, DOM, console, etc.) are available.
-- window.document IS this page — you can read and manipulate the JsChat UI itself via the DOM.
-- To run a file you previously wrote, use execute_file(path, extra_code). It loads the file then runs extra_code in the same scope.
+## Tab tools
+- list_tabs() — see all existing tabs (id, label, size)
+- get_tab(id) — read a tab's full HTML before editing it
+- set_tab(id, label, html) — create or replace a tab. Every call is autosaved as a version snapshot (user can roll back via History). id: short kebab-case slug. label: ≤8 chars for the nav bar.
+- delete_tab(id) — remove a tab permanently
 
-## Guidelines:
-- Always read a file before editing it.
-- Use str_replace for targeted edits rather than rewriting entire files.
-- When writing code, prefer clean, well-structured solutions.
-- Use execute_js to test code and verify it works.
-- You can create HTML files and open them in a new tab using: window.open(URL.createObjectURL(new Blob([content], {type:'text/html'})))
-- Be thorough and test your work.`;
+## Library search
+Before using any external library, call search_libraries("name") to get the exact CDN URL and version. Then add a <script src="..."> or <link rel="stylesheet" href="..."> in the tab's <head>. Never guess CDN URLs.
 
+## Writing tab HTML
+Every tab must be a complete HTML document:
+\`\`\`html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tab Name</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0d1117; color: #c9d1d9;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  /* design tokens: surface #161b22 | border #30363d | muted #8b949e | accent #58a6ff */
+</style>
+</head>
+<body>...</body>
+</html>
+\`\`\`
+
+Mobile-first rules (the app is primarily used on a phone):
+- Minimum tap target: 44px tall
+- Minimum font size: 14px
+- No horizontal scrolling — fluid layouts only
+- Input fields at least 44px tall
+- Use flexbox or grid; avoid fixed pixel widths
+
+## Data persistence
+Tabs share localStorage with the parent app (same origin). Namespace your keys: localStorage.setItem('msw_tab_TABID_key', value).
+
+## execute_js
+Use execute_js(code) to inspect app state, test logic, or read/write localStorage from the parent context.
+
+## Process
+1. Call list_tabs() to see what exists
+2. To edit an existing tab, call get_tab(id) first
+3. For any library, call search_libraries first
+4. Call set_tab to create or update
+5. Call finish when done`;
+
+// ── Tool definitions ─────────────────────────────────────────
 const _browserGlobals = Object.getOwnPropertyNames(window)
-  .filter(k => {
-    if (k.startsWith('on') || k.startsWith('webkit')) return false;
-    try { const v = window[k]; return typeof v === 'function' || (typeof v === 'object' && v !== null); } catch { return false; }
-  })
-  .filter(k => /^[A-Z]/.test(k))
-  .sort()
-  .join(', ');
+  .filter(k => { if (k.startsWith('on') || k.startsWith('webkit')) return false; try { const v = window[k]; return typeof v === 'function' || (typeof v === 'object' && v !== null); } catch { return false; } })
+  .filter(k => /^[A-Z]/.test(k)).sort().join(', ');
 
 const TOOLS = [
-  {
-    type: "function",
-    function: {
-      name: "str_replace",
-      description: "Replace the FIRST occurrence of old_str with new_str in the specified file. Use this for making targeted edits.",
-      parameters: {
-        type: "object",
-        properties: {
-          path: { type: "string", description: "Path to the file." },
-          old_str: { type: "string", description: "The string to replace." },
-          new_str: { type: "string", description: "The replacement string." }
-        },
-        required: ["path", "old_str", "new_str"]
-      }
+  { type: "function", function: {
+    name: "list_tabs",
+    description: "List all current tabs (id, label, html size in bytes).",
+    parameters: { type: "object", properties: {} }
+  }},
+  { type: "function", function: {
+    name: "get_tab",
+    description: "Get the full HTML content of a tab by id. Call this before editing an existing tab.",
+    parameters: { type: "object", properties: { id: { type: "string", description: "Tab id." } }, required: ["id"] }
+  }},
+  { type: "function", function: {
+    name: "set_tab",
+    description: "Create or replace a tab. Autosaves a version snapshot. The tab renders as a full HTML page in an iframe.",
+    parameters: {
+      type: "object",
+      properties: {
+        id:    { type: "string", description: "Short kebab-case slug, e.g. 'todo', 'weather'." },
+        label: { type: "string", description: "Display name in the bottom nav bar (keep ≤8 chars)." },
+        html:  { type: "string", description: "Complete HTML document starting with <!DOCTYPE html>." }
+      },
+      required: ["id", "label", "html"]
     }
-  },
-  {
-    type: "function",
-    function: {
-      name: "execute_js",
-      description: `Execute JavaScript code in the browser. Top-level await is supported. Available global objects: ${_browserGlobals}. Examples: \`document.title\` to read the page title; \`await fetch('https://api.example.com/data').then(r=>r.json())\` to make an HTTP request; \`document.body.style.background='red'\` to modify the page; \`localStorage.setItem('key','val')\` to store data. No Node.js APIs — no require(), no import(), no fs.`,
-      parameters: {
-        type: "object",
-        properties: {
-          code: { type: "string", description: "JavaScript code to execute." }
-        },
-        required: ["code"]
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "execute_file",
-      description: "Load a JS file from the workspace and execute it, optionally followed by extra code in the same scope. Use this to run or test code you previously wrote to a file.",
-      parameters: {
-        type: "object",
-        properties: {
-          path: { type: "string", description: "Path to the JS file to execute." },
-          extra_code: { type: "string", description: "Optional JavaScript to run after the file's code, in the same scope (e.g. to call a function defined in the file)." }
-        },
-        required: ["path"]
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "list_files",
-      description: "List all files in the workspace.",
-      parameters: {
-        type: "object",
-        properties: {}
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "delete_file",
-      description: "Delete a file from the workspace.",
-      parameters: {
-        type: "object",
-        properties: {
-          path: { type: "string", description: "Path to the file to delete." }
-        },
-        required: ["path"]
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "finish",
-      description: "Call this when you have completed the user's request. Provide a summary of what was done.",
-      parameters: {
-        type: "object",
-        properties: {
-          message: { type: "string", description: "Summary of what was done." }
-        },
-        required: ["message"]
-      }
-    }
-  }
+  }},
+  { type: "function", function: {
+    name: "delete_tab",
+    description: "Permanently remove a tab. Autosaves a snapshot before deleting.",
+    parameters: { type: "object", properties: { id: { type: "string" } }, required: ["id"] }
+  }},
+  { type: "function", function: {
+    name: "search_libraries",
+    description: "Search cdnjs.com for JavaScript/CSS libraries by keyword. Returns name, description, version, and CDN URL. Always call this before using any external library.",
+    parameters: { type: "object", properties: { query: { type: "string", description: "Search keywords, e.g. 'chart', 'markdown parser', 'date formatting'." } }, required: ["query"] }
+  }},
+  { type: "function", function: {
+    name: "execute_js",
+    description: `Execute JavaScript in the main app browser context (not inside a tab iframe). Useful for inspecting state, testing logic, or reading/writing localStorage. Top-level await supported. Available globals: ${_browserGlobals}.`,
+    parameters: { type: "object", properties: { code: { type: "string" } }, required: ["code"] }
+  }},
+  { type: "function", function: {
+    name: "finish",
+    description: "Call when the user's request is fully complete.",
+    parameters: { type: "object", properties: { message: { type: "string", description: "Brief summary of what was done." } }, required: ["message"] }
+  }}
 ];
 
 function buildAPIMessages() {
-  const msgs = [
+  return [
     { role: 'system', content: SYSTEM_PROMPT },
     ...messages.filter(m => m.role !== 'exec').map(m => {
       const msg = { role: m.role };
-      // OpenAI API requires content to be null (not a string) when tool_calls are present
-      if (m.tool_calls) {
-        msg.content = null;
-        msg.tool_calls = m.tool_calls;
-      } else if (m.content) {
-        msg.content = m.content;
-      }
-      if (m.tool_call_id) {
-        msg.tool_call_id = m.tool_call_id;
-      }
+      if (m.tool_calls) { msg.content = null; msg.tool_calls = m.tool_calls; }
+      else if (m.content) { msg.content = m.content; }
+      if (m.tool_call_id) msg.tool_call_id = m.tool_call_id;
       return msg;
     })
   ];
-  return msgs;
 }
 
 async function callLLM() {
   const apiKey = document.getElementById('api-key-input').value;
-  const model = document.getElementById('model-select').value;
-  const apiUrl = document.getElementById('api-url-input').value;
+  const model   = document.getElementById('model-select').value;
+  const apiUrl  = document.getElementById('api-url-input').value;
 
-  if (!apiKey) {
-    addMessage('system', '⚠️ Please set your API key in the settings bar.');
-    return null;
-  }
-
-  const body = {
-    model: model,
-    messages: buildAPIMessages(),
-    tools: TOOLS,
-    tool_choice: "auto",
-    temperature: 0.2,
-    max_tokens: 4096
-  };
+  if (!apiKey) { addMessage('system', 'Set your API key in settings (tap the Build header).'); return null; }
 
   const qIdx = apiUrl.indexOf('?');
-  const url = qIdx === -1
-    ? `${apiUrl}/chat/completions`
-    : `${apiUrl.slice(0, qIdx)}/chat/completions${apiUrl.slice(qIdx)}`;
-  let headers = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${apiKey}`
+  const url = qIdx === -1 ? `${apiUrl}/chat/completions` : `${apiUrl.slice(0, qIdx)}/chat/completions${apiUrl.slice(qIdx)}`;
+  const opts = {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({ model, messages: buildAPIMessages(), tools: TOOLS, tool_choice: "auto", temperature: 0.2, max_tokens: 8192 }),
+    mode: 'cors', credentials: 'omit'
   };
 
-  const fetchOptions = { method: 'POST', headers, body: JSON.stringify(body), mode: 'cors', credentials: 'omit' };
   let response;
-  try {
-    response = await fetch(url, fetchOptions);
-  } catch (firstErr) {
-    // First attempt failed (CORS preflight may not have completed yet) — retry once
-    try {
-      await new Promise(r => setTimeout(r, 500));
-      response = await fetch(url, fetchOptions);
-    } catch (networkErr) {
-      addMessage('system', `❌ Network Error: Failed to connect to ${apiUrl}\nHTTP status: N/A\nDetails: ${networkErr.message}`);
-      return null;
-    }
-  }
+  try { response = await fetch(url, opts); }
+  catch { try { await new Promise(r => setTimeout(r, 500)); response = await fetch(url, opts); } catch (e) { addMessage('error', `Network error: ${e.message}`); return null; } }
 
   if (!response.ok) {
-    let errText = '';
-    try {
-      errText = await response.text();
-    } catch (bodyErr) {
-      errText = `(could not read response body: ${bodyErr.message})`;
-    }
-    addMessage('system', `❌ API Error\nHTTP status: ${response.status} ${response.statusText}\n${errText}`);
+    const txt = await response.text().catch(() => '');
+    addMessage('error', `API error ${response.status}: ${txt}`);
     return null;
   }
-
   try {
     const data = await response.json();
     const msg = data.choices?.[0]?.message;
-    return {
-      content: msg?.content || '',
-      tool_calls: msg?.tool_calls || []
-    };
-  } catch (parseErr) {
-    addMessage('system', `❌ API Error: Failed to parse response JSON\nHTTP status: ${response.status} ${response.statusText}\nDetails: ${parseErr.message}`);
-    return null;
-  }
-}
-
-function parseToolCalls(response) {
-  // response is now { content, tool_calls } from the API
-  const tool_calls = (response.tool_calls || []).map(tc => ({
-    tool: tc.function.name,
-    params: JSON.parse(tc.function.arguments || '{}')
-  }));
-  return {
-    message: response.content || '',
-    tool_calls
-  };
+    return { content: msg?.content || '', tool_calls: msg?.tool_calls || [] };
+  } catch (e) { addMessage('error', `Parse error: ${e.message}`); return null; }
 }
 
 async function executeToolCall(tc) {
   const { tool, params } = tc;
-  if (tool !== 'execute_js') {
-    addMessage('tool', `🔧 Calling: ${tool}(${JSON.stringify(params)})`);
-  }
-
   try {
     let result;
     switch (tool) {
-      case 'str_replace':
-        result = strReplace(params.path, params.old_str, params.new_str);
+
+      case 'list_tabs': {
+        const tabs = getTabs();
+        result = { tabs: tabs.map(t => ({ id: t.id, label: t.label, size: (t.html || '').length })) };
         break;
-      case 'execute_js':
-        addExecMessage(`🔧 execute_js:\n${params.code}`, 'code');
+      }
+
+      case 'get_tab': {
+        const tab = getTabs().find(t => t.id === params.id);
+        result = tab ? { id: tab.id, label: tab.label, html: tab.html } : { error: `Tab not found: ${params.id}` };
+        break;
+      }
+
+      case 'set_tab': {
+        const tabs = getTabs();
+        const idx = tabs.findIndex(t => t.id === params.id);
+        saveSnapshot();
+        if (idx >= 0) tabs[idx] = { id: params.id, label: params.label, html: params.html };
+        else tabs.push({ id: params.id, label: params.label, html: params.html });
+        setTabs(tabs);
+        renderNavTabs();
+        const existingIframe = tabIframes[params.id];
+        if (existingIframe) existingIframe.srcdoc = params.html;
+        result = { success: true, id: params.id, label: params.label, action: idx >= 0 ? 'updated' : 'created' };
+        break;
+      }
+
+      case 'delete_tab': {
+        const tabs = getTabs();
+        const idx = tabs.findIndex(t => t.id === params.id);
+        if (idx < 0) { result = { error: `Tab not found: ${params.id}` }; break; }
+        saveSnapshot();
+        tabs.splice(idx, 1);
+        setTabs(tabs);
+        const pane = document.getElementById(`pane-${params.id}`);
+        if (pane) pane.remove();
+        delete tabIframes[params.id];
+        renderNavTabs();
+        if (activeTab === params.id) activateTab('build');
+        result = { success: true, id: params.id };
+        break;
+      }
+
+      case 'search_libraries': {
+        const q = encodeURIComponent(params.query);
+        const resp = await fetch(`https://api.cdnjs.com/libraries?search=${q}&fields=name,description,filename,version&limit=8`);
+        const data = await resp.json();
+        result = (data.results || []).map(lib => ({
+          name: lib.name,
+          description: lib.description || '',
+          version: lib.version,
+          url: `https://cdnjs.cloudflare.com/ajax/libs/${lib.name}/${lib.version}/${lib.filename}`
+        }));
+        break;
+      }
+
+      case 'execute_js': {
+        addExecMessage(`execute_js:\n${params.code}`, 'code');
         const execResult = await executeJS(params.code);
-        let execLines = '';
-        if (execResult.outputs && execResult.outputs.length > 0) {
-          execLines = execResult.outputs.map(o => o.text).join('\n');
-        }
+        let lines = (execResult.outputs || []).map(o => o.text).join('\n');
         if (execResult.error) {
-          execLines += (execLines ? '\n' : '') + `Error: ${execResult.error}`;
-          result = { error: execResult.error, outputs: execResult.outputs, _execOutput: execLines };
+          lines += (lines ? '\n' : '') + `Error: ${execResult.error}`;
+          result = { error: execResult.error, outputs: execResult.outputs, _out: lines };
         } else {
-          if (execResult.result !== 'undefined') {
-            execLines += (execLines ? '\n' : '') + `→ ${execResult.result}`;
-          }
+          if (execResult.result !== 'undefined') lines += (lines ? '\n' : '') + `→ ${execResult.result}`;
           result = execResult.result === 'undefined'
-            ? { outputs: execResult.outputs, _execOutput: execLines }
-            : { result: execResult.result, outputs: execResult.outputs, _execOutput: execLines };
-        }
-        break;
-      case 'execute_file': {
-        const fileResult = readFile(params.path);
-        if (fileResult.error) { result = fileResult; break; }
-        const combined = fileResult.content + (params.extra_code ? '\n' + params.extra_code : '');
-        addExecMessage(`🔧 execute_file: ${params.path}${params.extra_code ? '\n' + params.extra_code : ''}`, 'code');
-        const ef = await executeJS(combined);
-        let efLines = (ef.outputs || []).map(o => o.text).join('\n');
-        if (ef.error) {
-          efLines += (efLines ? '\n' : '') + `Error: ${ef.error}`;
-          result = { error: ef.error, outputs: ef.outputs, _execOutput: efLines };
-        } else {
-          if (ef.result !== 'undefined') efLines += (efLines ? '\n' : '') + `→ ${ef.result}`;
-          result = ef.result === 'undefined'
-            ? { outputs: ef.outputs, _execOutput: efLines }
-            : { result: ef.result, outputs: ef.outputs, _execOutput: efLines };
+            ? { outputs: execResult.outputs, _out: lines }
+            : { result: execResult.result, outputs: execResult.outputs, _out: lines };
         }
         break;
       }
-      case 'list_files':
-        result = { files: listFiles() };
-        break;
-      case 'delete_file':
-        result = deleteFile(params.path);
-        break;
+
       case 'finish':
-        result = { done: true, summary: params.message || 'Task complete.' };
+        result = { done: true, summary: params.message || 'Done.' };
         break;
+
       default:
         result = { error: `Unknown tool: ${tool}` };
     }
@@ -831,70 +758,36 @@ async function processUserMessage(userText) {
   saveMessages();
 
   let iterations = 0;
-  const maxIterations = 20;
-
-  while (iterations < maxIterations) {
+  while (iterations < 30) {
     iterations++;
     const response = await callLLM();
     if (!response) break;
 
-    const parsed = parseToolCalls(response);
-
-    if (!parsed.tool_calls || parsed.tool_calls.length === 0) {
-      if (parsed.message) {
-        addMessage('assistant', parsed.message);
-        messages.push({ role: 'assistant', content: parsed.message });
-        saveMessages();
-      }
+    if (!response.tool_calls?.length) {
+      if (response.content) { addMessage('assistant', response.content); messages.push({ role: 'assistant', content: response.content }); saveMessages(); }
       break;
     }
 
-    // Build the assistant message with tool_calls for the API
-    // content must be null when tool_calls are present (OpenAI API requirement)
-    const assistantMsg = {
-      role: 'assistant',
-      content: null,
-      tool_calls: response.tool_calls  // original tool_calls from API
-    };
+    const assistantMsg = { role: 'assistant', content: null, tool_calls: response.tool_calls };
     messages.push(assistantMsg);
     saveMessages();
-    // Show the message text in the UI separately
-    if (parsed.message && parsed.message.trim()) {
-      addMessage('assistant', parsed.message.trim());
-    }
 
-    // Execute all tool calls
-    for (const tc of parsed.tool_calls) {
+    const parsed = response.tool_calls.map(tc => ({ tool: tc.function.name, params: JSON.parse(tc.function.arguments || '{}'), id: tc.id }));
+    if (response.content?.trim()) addMessage('assistant', response.content.trim());
+
+    let done = false;
+    for (const tc of parsed) {
+      if (tc.tool !== 'execute_js') addMessage('tool', `→ ${tc.tool}(${JSON.stringify(tc.params)})`);
       const result = await executeToolCall(tc);
-
-      // Add result to messages using proper tool role format
-      const execOutput = result._execOutput;
-      delete result._execOutput;
+      const out = result._out; delete result._out;
       const resultStr = JSON.stringify(result, null, 2);
-      const isExecTool = tc.tool === 'execute_js' || tc.tool === 'execute_file';
-      if (isExecTool && !execOutput && !result.error) {
-        addExecMessage(`${tc.tool} completed without output`);
-      } else {
-        addMessage('tool', `✅ ${tc.tool} result:\n${resultStr}`);
-        if (execOutput) addExecMessage(execOutput);
-      }
-      messages.push({
-        role: 'tool',
-        tool_call_id: response.tool_calls.find(t => t.function.name === tc.tool)?.id || '',
-        content: resultStr
-      });
+      if (tc.tool === 'execute_js') { if (out) addExecMessage(out); }
+      else addMessage('tool', `✓ ${tc.tool}: ${resultStr}`);
+      messages.push({ role: 'tool', tool_call_id: tc.id, content: resultStr });
       saveMessages();
-
-      // Check if finish was called
-      if (tc.tool === 'finish') {
-        iterations = maxIterations; // break outer loop
-        break;
-      }
+      if (tc.tool === 'finish') { done = true; addMessage('assistant', result.summary || 'Done.'); break; }
     }
-  }
-
-  if (iterations >= maxIterations) {
-    addMessage('system', '⚠️ Reached maximum iteration limit. The agent may not have completed its task.');
+    if (done) break;
   }
 
   isProcessing = false;
@@ -904,15 +797,126 @@ async function processUserMessage(userText) {
 }
 
 // ============================================================
-// 4. UI RENDERING
+// 4. TAB / NAV MANAGEMENT
+// ============================================================
+let activeTab = 'build';
+const tabIframes = {};
+
+function renderNavTabs() {
+  const nav = document.getElementById('bottom-nav');
+  const buildBtn = document.getElementById('nav-btn-build');
+  Array.from(nav.querySelectorAll('.nav-btn:not(#nav-btn-build)')).forEach(b => b.remove());
+  getTabs().forEach(tab => {
+    const btn = document.createElement('button');
+    btn.className = 'nav-btn' + (activeTab === tab.id ? ' active' : '');
+    btn.dataset.tab = tab.id;
+    btn.id = `nav-btn-${tab.id}`;
+    btn.innerHTML = `<span class="nav-label">${tab.label}</span>`;
+    btn.onclick = () => activateTab(tab.id);
+    nav.insertBefore(btn, buildBtn);
+  });
+  buildBtn.classList.toggle('active', activeTab === 'build');
+}
+
+function activateTab(id) {
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+
+  if (id === 'build') {
+    document.getElementById('pane-build').classList.add('active');
+  } else {
+    const tabs = getTabs();
+    const tab = tabs.find(t => t.id === id);
+    if (!tab) { activateTab('build'); return; }
+
+    let pane = document.getElementById(`pane-${id}`);
+    if (!pane) {
+      pane = document.createElement('div');
+      pane.className = 'tab-pane';
+      pane.id = `pane-${id}`;
+      const iframe = document.createElement('iframe');
+      iframe.srcdoc = tab.html;
+      pane.appendChild(iframe);
+      document.getElementById('tab-content').appendChild(pane);
+      tabIframes[id] = iframe;
+    }
+    pane.classList.add('active');
+  }
+
+  const btn = document.getElementById(`nav-btn-${id}`);
+  if (btn) btn.classList.add('active');
+  activeTab = id;
+}
+
+// ============================================================
+// 5. HISTORY
+// ============================================================
+function openHistoryModal() {
+  const history = getHistory();
+  const list = document.getElementById('history-list');
+  list.innerHTML = '';
+  if (!history.length) {
+    list.innerHTML = '<p class="history-empty">No history yet. History is saved on every tab change.</p>';
+  } else {
+    history.forEach((snap, idx) => {
+      const item = document.createElement('div');
+      item.className = 'history-item';
+      const tabNames = snap.tabs.map(t => t.label).join(', ') || '(empty)';
+      const date = new Date(snap.timestamp).toLocaleString();
+      item.innerHTML = `
+        <div class="h-meta"><span>${date}</span><span>${snap.tabs.length} tab(s)</span></div>
+        <div class="h-tabs">${tabNames}</div>
+        <button class="btn-small" style="margin-top:6px;align-self:flex-start" data-idx="${idx}">Restore</button>
+      `;
+      item.querySelector('button').onclick = () => restoreSnapshot(idx);
+      list.appendChild(item);
+    });
+  }
+  document.getElementById('history-modal').classList.add('open');
+}
+
+function closeHistoryModal() {
+  document.getElementById('history-modal').classList.remove('open');
+}
+
+function restoreSnapshot(idx) {
+  const history = getHistory();
+  if (!history[idx]) return;
+  saveSnapshot();
+  setTabs(history[idx].tabs);
+  Object.keys(tabIframes).forEach(id => {
+    const pane = document.getElementById(`pane-${id}`);
+    if (pane) pane.remove();
+    delete tabIframes[id];
+  });
+  renderNavTabs();
+  activateTab('build');
+  closeHistoryModal();
+  const date = new Date(history[idx].timestamp).toLocaleString();
+  addMessage('system', `Restored to version from ${date} (${history[idx].tabs.length} tab(s))`);
+}
+
+// ============================================================
+// 6. UI HELPERS
 // ============================================================
 function addMessage(role, content) {
-  const container = document.getElementById('messages');
   const div = document.createElement('div');
   div.className = `msg ${role}`;
   div.textContent = content;
+  const container = document.getElementById('messages');
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
+}
+
+function addExecMessage(text) {
+  const div = document.createElement('div');
+  div.className = 'msg exec';
+  div.textContent = text;
+  const container = document.getElementById('messages');
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+  messages.push({ role: 'exec', content: text });
+  saveMessages();
 }
 
 function renderMessages() {
@@ -920,145 +924,98 @@ function renderMessages() {
   container.innerHTML = '';
   messages.forEach(m => {
     const div = document.createElement('div');
-    if (m.role === 'exec') {
-      div.className = m.extraClass ? `msg exec ${m.extraClass}` : 'msg exec';
-    } else {
-      div.className = `msg ${m.role}`;
-    }
+    div.className = m.role === 'exec' ? 'msg exec' : `msg ${m.role}`;
     div.textContent = m.content;
     container.appendChild(div);
   });
   container.scrollTop = container.scrollHeight;
 }
 
-function addExecMessage(text, extraClass) {
-  const container = document.getElementById('messages');
-  const div = document.createElement('div');
-  div.className = extraClass ? `msg exec ${extraClass}` : 'msg exec';
-  div.textContent = text;
-  container.appendChild(div);
-  container.scrollTop = container.scrollHeight;
-  messages.push({ role: 'exec', content: text, extraClass: extraClass || null });
-  saveMessages();
-}
-
 // ============================================================
-// 5. EVENT BINDING & INIT
+// 7. INIT & EVENT BINDING
 // ============================================================
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', () => {
   loadSettings();
   loadMessages();
+  renderNavTabs();
 
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./service-worker.js').catch(err => {
-      console.error('Service worker registration failed:', err);
-    });
+    navigator.serviceWorker.register('./service-worker.js').catch(() => {});
   }
 
-  // Toggle settings bar when clicking the panel header
+  // Toggle settings on header tap
   document.getElementById('panel-header').onclick = () => {
     const bar = document.getElementById('settings-bar');
     bar.style.display = bar.style.display === 'none' ? '' : 'none';
   };
 
-  // Chat send
+  // Send
   document.getElementById('send-btn').onclick = async () => {
     const input = document.getElementById('chat-input');
     const text = input.value.trim();
     if (!text || isProcessing) return;
     input.value = '';
+    input.style.height = '';
     await processUserMessage(text);
   };
 
-  document.getElementById('chat-input').onkeydown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      document.getElementById('send-btn').click();
-    }
+  document.getElementById('chat-input').onkeydown = e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); document.getElementById('send-btn').click(); }
   };
 
-  // Settings save on change
-  document.getElementById('api-key-input').onchange = saveSettings;
-  document.getElementById('model-select').onchange = saveSettings;
-  document.getElementById('api-url-input').onchange = saveSettings;
+  // Auto-resize textarea
+  document.getElementById('chat-input').oninput = function() {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+  };
+
+  // Settings auto-save
+  ['api-key-input','model-select','api-url-input'].forEach(id => {
+    document.getElementById(id).onchange = saveSettings;
+  });
 
   // Config management
   document.getElementById('config-select').onchange = function() {
-    const name = this.value;
-    if (name) {
-      loadConfig(name);
-    } else {
-      // Manual mode – load from individual keys
-      const savedKey = localStorage.getItem(API_KEY_KEY) || '';
-      const savedModel = localStorage.getItem(MODEL_KEY) || 'gpt-4o';
-      const savedUrl = localStorage.getItem(API_URL_KEY) || INFERENCE_URLS[0];
-      document.getElementById('api-key-input').value = savedKey;
-      document.getElementById('model-select').value = savedModel;
-      const urlSelect = document.getElementById('api-url-input');
-      for (let opt of urlSelect.options) {
-        if (opt.value === savedUrl) { opt.selected = true; break; }
-      }
-      document.getElementById('model-badge').textContent = savedModel;
-      setActiveConfigName('');
+    if (this.value) { loadConfig(this.value); }
+    else {
+      document.getElementById('api-key-input').value = localStorage.getItem(API_KEY_KEY) || '';
+      document.getElementById('model-select').value  = localStorage.getItem(MODEL_KEY)   || 'gpt-4o';
+      const url = localStorage.getItem(API_URL_KEY) || INFERENCE_URLS[0];
+      const urlSel = document.getElementById('api-url-input');
+      for (const opt of urlSel.options) { if (opt.value === url) { opt.selected = true; break; } }
+      document.getElementById('model-badge').textContent = localStorage.getItem(MODEL_KEY) || 'gpt-4o';
+      setActiveCfgName('');
     }
   };
-
-  document.getElementById('save-config-btn').onclick = function() {
+  document.getElementById('save-config-btn').onclick = () => {
     const nameInput = document.getElementById('config-name-input');
-    let name = nameInput.value.trim();
-    if (!name) {
-      // Auto-generate from model name
-      const model = document.getElementById('model-select').value;
-      name = model || 'my-config';
-    }
-    if (saveCurrentAsConfig(name)) {
-      nameInput.value = '';
-      addMessage('system', `✅ Config "${name}" saved.`);
-    }
+    const name = nameInput.value.trim() || document.getElementById('model-select').value || 'my-config';
+    if (saveCurrentAsConfig(name)) { nameInput.value = ''; addMessage('system', `Config "${name}" saved.`); }
   };
-
-  document.getElementById('delete-config-btn').onclick = function() {
-    const select = document.getElementById('config-select');
-    const name = select.value;
-    if (!name) {
-      addMessage('system', '⚠️ Select a config to delete.');
-      return;
-    }
-    if (confirm(`Delete config "${name}"?`)) {
-      deleteConfig(name);
-      addMessage('system', `🗑 Config "${name}" deleted.`);
-    }
+  document.getElementById('delete-config-btn').onclick = () => {
+    const name = document.getElementById('config-select').value;
+    if (!name) { addMessage('system', 'Select a config to delete.'); return; }
+    if (confirm(`Delete config "${name}"?`)) { deleteConfig(name); addMessage('system', `Config "${name}" deleted.`); }
   };
-
-  // Allow pressing Enter in config name input to save
-  document.getElementById('config-name-input').onkeydown = function(e) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      document.getElementById('save-config-btn').click();
-    }
+  document.getElementById('config-name-input').onkeydown = e => {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('save-config-btn').click(); }
   };
 
   // Clear chat
-  document.getElementById('clear-chat-btn').onclick = (e) => {
+  document.getElementById('clear-chat-btn').onclick = e => {
     e.stopPropagation();
-    messages = [];
-    saveMessages();
-    renderMessages();
+    messages = []; saveMessages(); renderMessages();
   };
 
-  // Keyboard shortcut: Ctrl+Enter to send from chat
-  document.addEventListener('keydown', (e) => {
-    if (e.ctrlKey && e.key === 'Enter') {
-      const chatInput = document.getElementById('chat-input');
-      if (document.activeElement === chatInput) {
-        document.getElementById('send-btn').click();
-      }
-    }
-  });
+  // History
+  document.getElementById('history-btn').onclick = e => { e.stopPropagation(); openHistoryModal(); };
 
-  // Welcome message
+  // Build nav button
+  document.getElementById('nav-btn-build').onclick = () => activateTab('build');
+
+  // Welcome
   if (messages.length === 0) {
-    addMessage('system', '🚀 Welcome to JsChat, a browser agent!\n\nSet your API key above, then ask me to write code. I can read/write files, execute JavaScript, and more.');
+    addMessage('system', "Welcome to Martin's Super Webapp!\n\nUse this Build tab to add tabs to your app. Try:\n• \"Add a todo list tab\"\n• \"Create a Pomodoro timer\"\n• \"Add a notes tab that saves to localStorage\"\n\nSet your API key first (tap the 🔧 Build header).");
   }
 });
 </script>

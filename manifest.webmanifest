@@ -1,7 +1,7 @@
 {
-  "name": "JsChat",
-  "short_name": "JsChat",
-  "description": "A browser-based coding agent that runs entirely in your browser.",
+  "name": "Martin's Super Webapp",
+  "short_name": "SuperApp",
+  "description": "Martin's personal mobile-first progressive web app, self-built with AI.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
