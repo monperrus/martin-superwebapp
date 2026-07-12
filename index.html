@@ -747,53 +747,67 @@ async function executeToolCall(tc) {
   }
 }
 
+function unlockInput() {
+  isProcessing = false;
+  document.getElementById('send-btn').disabled = false;
+  document.getElementById('chat-input').disabled = false;
+  document.getElementById('chat-input').focus();
+}
+
 async function processUserMessage(userText) {
   if (isProcessing) return;
   isProcessing = true;
   document.getElementById('send-btn').disabled = true;
   document.getElementById('chat-input').disabled = true;
 
-  addMessage('user', userText);
-  messages.push({ role: 'user', content: userText });
-  saveMessages();
-
-  let iterations = 0;
-  while (iterations < 30) {
-    iterations++;
-    const response = await callLLM();
-    if (!response) break;
-
-    if (!response.tool_calls?.length) {
-      if (response.content) { addMessage('assistant', response.content); messages.push({ role: 'assistant', content: response.content }); saveMessages(); }
-      break;
-    }
-
-    const assistantMsg = { role: 'assistant', content: null, tool_calls: response.tool_calls };
-    messages.push(assistantMsg);
+  try {
+    addMessage('user', userText);
+    messages.push({ role: 'user', content: userText });
     saveMessages();
 
-    const parsed = response.tool_calls.map(tc => ({ tool: tc.function.name, params: JSON.parse(tc.function.arguments || '{}'), id: tc.id }));
-    if (response.content?.trim()) addMessage('assistant', response.content.trim());
+    let iterations = 0;
+    while (iterations < 30) {
+      iterations++;
+      const response = await callLLM();
+      if (!response) break;
 
-    let done = false;
-    for (const tc of parsed) {
-      if (tc.tool !== 'execute_js') addMessage('tool', `→ ${tc.tool}(${JSON.stringify(tc.params)})`);
-      const result = await executeToolCall(tc);
-      const out = result._out; delete result._out;
-      const resultStr = JSON.stringify(result, null, 2);
-      if (tc.tool === 'execute_js') { if (out) addExecMessage(out); }
-      else addMessage('tool', `✓ ${tc.tool}: ${resultStr}`);
-      messages.push({ role: 'tool', tool_call_id: tc.id, content: resultStr });
+      if (!response.tool_calls?.length) {
+        if (response.content) { addMessage('assistant', response.content); messages.push({ role: 'assistant', content: response.content }); saveMessages(); }
+        break;
+      }
+
+      const assistantMsg = { role: 'assistant', content: null, tool_calls: response.tool_calls };
+      messages.push(assistantMsg);
       saveMessages();
-      if (tc.tool === 'finish') { done = true; addMessage('assistant', result.summary || 'Done.'); break; }
-    }
-    if (done) break;
-  }
 
-  isProcessing = false;
-  document.getElementById('send-btn').disabled = false;
-  document.getElementById('chat-input').disabled = false;
-  document.getElementById('chat-input').focus();
+      let parsed;
+      try {
+        parsed = response.tool_calls.map(tc => ({ tool: tc.function.name, params: JSON.parse(tc.function.arguments || '{}'), id: tc.id }));
+      } catch (e) {
+        addMessage('error', `Failed to parse tool call arguments: ${e.message}`);
+        break;
+      }
+      if (response.content?.trim()) addMessage('assistant', response.content.trim());
+
+      let done = false;
+      for (const tc of parsed) {
+        if (tc.tool !== 'execute_js') addMessage('tool', `→ ${tc.tool}(${JSON.stringify(tc.params)})`);
+        const result = await executeToolCall(tc);
+        const out = result._out; delete result._out;
+        const resultStr = JSON.stringify(result, null, 2);
+        if (tc.tool === 'execute_js') { if (out) addExecMessage(out); }
+        else addMessage('tool', `✓ ${tc.tool}: ${resultStr}`);
+        messages.push({ role: 'tool', tool_call_id: tc.id, content: resultStr });
+        saveMessages();
+        if (tc.tool === 'finish') { done = true; addMessage('assistant', result.summary || 'Done.'); break; }
+      }
+      if (done) break;
+    }
+  } catch (err) {
+    addMessage('error', `Unexpected error: ${err.message}`);
+  } finally {
+    unlockInput();
+  }
 }
 
 // ============================================================
