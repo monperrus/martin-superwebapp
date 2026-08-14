@@ -189,6 +189,15 @@ body {
 }
 .input-area button:hover { background: var(--accent-hover); }
 .input-area button:disabled { opacity: 0.5; cursor: not-allowed; }
+.input-area button.stop { background: var(--danger); }
+.input-area button.stop:hover { background: #da3633; }
+#status {
+  padding: 4px 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
 
 /* ── Settings bar ─────────────────────────────────────────── */
 #settings-bar {
@@ -308,6 +317,7 @@ body {
         <label>API URL <select id="api-url-input" style="width:190px"></select></label>
       </div>
       <div id="messages"></div>
+      <div id="status" hidden></div>
       <div class="input-area">
         <textarea id="chat-input" placeholder="Ask the AI to build a new tab…" rows="2"></textarea>
         <button id="send-btn">Send</button>
@@ -399,6 +409,39 @@ async function executeJS(code) {
 // ============================================================
 let messages = [];
 let isProcessing = false;
+let abortController = null;
+let cancelRequested = false;
+let lastActivity = Date.now();
+
+function setStatus(text) {
+  const el = document.getElementById('status');
+  el.textContent = text;
+  el.hidden = !text;
+  lastActivity = Date.now();
+}
+function lockInput() {
+  isProcessing = true;
+  cancelRequested = false;
+  const btn = document.getElementById('send-btn');
+  const input = document.getElementById('chat-input');
+  // keep the button clickable so it can act as Stop
+  btn.textContent = 'Stop';
+  btn.classList.add('stop');
+  input.disabled = true;
+}
+function unlockInput() {
+  isProcessing = false;
+  cancelRequested = false;
+  abortController = null;
+  const btn = document.getElementById('send-btn');
+  const input = document.getElementById('chat-input');
+  btn.disabled = false;
+  input.disabled = false;
+  btn.textContent = 'Send';
+  btn.classList.remove('stop');
+  setStatus('');
+  input.focus();
+}
 
 // ── Config management ────────────────────────────────────────
 function getConfigs() { try { return JSON.parse(localStorage.getItem(CONFIGS_KEY)) || {}; } catch { return {}; } }
@@ -634,16 +677,34 @@ async function callLLM() {
 
   const qIdx = apiUrl.indexOf('?');
   const url = qIdx === -1 ? `${apiUrl}/chat/completions` : `${apiUrl.slice(0, qIdx)}/chat/completions${apiUrl.slice(qIdx)}`;
+  abortController = new AbortController();
+  const controller = abortController;
+  let timedOut = false;
+  const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, 120000);
   const opts = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
     body: JSON.stringify({ model, messages: buildAPIMessages(), tools: TOOLS, tool_choice: "auto", temperature: 0.2, max_tokens: 8192 }),
-    mode: 'cors', credentials: 'omit'
+    mode: 'cors', credentials: 'omit',
+    signal: controller.signal
   };
 
   let response;
   try { response = await fetch(url, opts); }
-  catch { try { await new Promise(r => setTimeout(r, 500)); response = await fetch(url, opts); } catch (e) { addMessage('error', `Network error: ${e.message}`); return null; } }
+  catch (e) {
+    clearTimeout(timeoutId);
+    if (e.name === 'AbortError') {
+      addMessage('error', timedOut ? 'Request timed out after 2 min.' : 'Cancelled.');
+      return null;
+    }
+    // transient network glitch — one retry
+    try { await new Promise(r => setTimeout(r, 500)); response = await fetch(url, opts); }
+    catch (e2) {
+      if (e2.name === 'AbortError') { addMessage('error', timedOut ? 'Request timed out after 2 min.' : 'Cancelled.'); return null; }
+      addMessage('error', `Network error: ${e2.message}`); return null;
+    }
+  } finally { clearTimeout(timeoutId); }
+  abortController = null;
 
   if (!response.ok) {
     const txt = await response.text().catch(() => '');
@@ -662,6 +723,7 @@ async function executeToolCall(tc) {
   try {
     let result;
     switch (tool) {
+      case 'finish': { result = { done: true, summary: params.message || 'Done.' }; break; }
 
       case 'list_tabs': {
         const tabs = getTabs();
@@ -707,7 +769,8 @@ async function executeToolCall(tc) {
 
       case 'search_libraries': {
         const q = encodeURIComponent(params.query);
-        const resp = await fetch(`https://api.cdnjs.com/libraries?search=${q}&fields=name,description,filename,version&limit=8`);
+        const libCtl = AbortSignal.timeout(15000);
+        const resp = await fetch(`https://api.cdnjs.com/libraries?search=${q}&fields=name,description,filename,version&limit=8`, { signal: libCtl });
         const data = await resp.json();
         result = (data.results || []).map(lib => ({
           name: lib.name,
@@ -734,10 +797,6 @@ async function executeToolCall(tc) {
         break;
       }
 
-      case 'finish':
-        result = { done: true, summary: params.message || 'Done.' };
-        break;
-
       default:
         result = { error: `Unknown tool: ${tool}` };
     }
@@ -747,18 +806,9 @@ async function executeToolCall(tc) {
   }
 }
 
-function unlockInput() {
-  isProcessing = false;
-  document.getElementById('send-btn').disabled = false;
-  document.getElementById('chat-input').disabled = false;
-  document.getElementById('chat-input').focus();
-}
-
 async function processUserMessage(userText) {
   if (isProcessing) return;
-  isProcessing = true;
-  document.getElementById('send-btn').disabled = true;
-  document.getElementById('chat-input').disabled = true;
+  lockInput();
 
   try {
     addMessage('user', userText);
@@ -766,10 +816,11 @@ async function processUserMessage(userText) {
     saveMessages();
 
     let iterations = 0;
-    while (iterations < 30) {
+    while (iterations < 30 && !cancelRequested) {
       iterations++;
+      setStatus(`Thinking${iterations > 1 ? ` (step ${iterations})` : ''}…`);
       const response = await callLLM();
-      if (!response) break;
+      if (!response || cancelRequested) break;
 
       if (!response.tool_calls?.length) {
         if (response.content) { addMessage('assistant', response.content); messages.push({ role: 'assistant', content: response.content }); saveMessages(); }
@@ -791,6 +842,8 @@ async function processUserMessage(userText) {
 
       let done = false;
       for (const tc of parsed) {
+        if (cancelRequested) break;
+        setStatus(`Running ${tc.tool}…`);
         if (tc.tool !== 'execute_js') addMessage('tool', `→ ${tc.tool}(${JSON.stringify(tc.params)})`);
         const result = await executeToolCall(tc);
         const out = result._out; delete result._out;
@@ -963,11 +1016,17 @@ document.addEventListener('DOMContentLoaded', () => {
     bar.style.display = bar.style.display === 'none' ? '' : 'none';
   };
 
-  // Send
-  document.getElementById('send-btn').onclick = async () => {
+  // Send / Stop
+  document.getElementById('send-btn').onclick = async function() {
+    if (isProcessing) {
+      cancelRequested = true;
+      if (abortController) abortController.abort(); // error path unlocks via finally
+      else unlockInput();
+      return;
+    }
     const input = document.getElementById('chat-input');
     const text = input.value.trim();
-    if (!text || isProcessing) return;
+    if (!text) return;
     input.value = '';
     input.style.height = '';
     await processUserMessage(text);
@@ -976,6 +1035,12 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('chat-input').onkeydown = e => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); document.getElementById('send-btn').click(); }
   };
+
+  // Safety net: never leave the input locked
+  setInterval(() => {
+    if (!isProcessing) return;
+    if (cancelRequested || Date.now() - lastActivity > 300000) unlockInput();
+  }, 5000);
 
   // Auto-resize textarea
   document.getElementById('chat-input').oninput = function() {
