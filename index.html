@@ -684,7 +684,7 @@ async function callLLM() {
   const opts = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({ model, messages: buildAPIMessages(), tools: TOOLS, tool_choice: "auto", temperature: 0.2, max_tokens: 8192 }),
+    body: JSON.stringify({ model, messages: buildAPIMessages(), tools: TOOLS, tool_choice: "auto", temperature: 0.2, max_tokens: 16384 }),
     mode: 'cors', credentials: 'omit',
     signal: controller.signal
   };
@@ -714,7 +714,7 @@ async function callLLM() {
   try {
     const data = await response.json();
     const msg = data.choices?.[0]?.message;
-    return { content: msg?.content || '', tool_calls: msg?.tool_calls || [] };
+    return { content: msg?.content || '', tool_calls: msg?.tool_calls || [], finish_reason: data.choices?.[0]?.finish_reason };
   } catch (e) { addMessage('error', `Parse error: ${e.message}`); return null; }
 }
 
@@ -816,6 +816,7 @@ async function processUserMessage(userText) {
     saveMessages();
 
     let iterations = 0;
+    let malformedRetries = 0;
     while (iterations < 30 && !cancelRequested) {
       iterations++;
       setStatus(`Thinking${iterations > 1 ? ` (step ${iterations})` : ''}…`);
@@ -825,6 +826,9 @@ async function processUserMessage(userText) {
       if (!response.tool_calls?.length) {
         if (response.content) { addMessage('assistant', response.content); messages.push({ role: 'assistant', content: response.content }); saveMessages(); }
         break;
+      }
+      if (response.finish_reason === 'length') {
+        addMessage('error', 'Response hit the max_tokens limit — tool arguments may be truncated.');
       }
 
       const assistantMsg = { role: 'assistant', content: null, tool_calls: response.tool_calls };
@@ -836,6 +840,15 @@ async function processUserMessage(userText) {
         parsed = response.tool_calls.map(tc => ({ tool: tc.function.name, params: JSON.parse(tc.function.arguments || '{}'), id: tc.id }));
       } catch (e) {
         addMessage('error', `Failed to parse tool call arguments: ${e.message}`);
+        // Roll back the unparseable assistant turn and feed the error back to the model so it can retry.
+        messages.pop();
+        if (malformedRetries < 3) {
+          malformedRetries++;
+          messages.push({ role: 'user', content: `Your last tool call arguments were invalid JSON (${e.message}). The call was not executed. Re-issue the tool call with valid JSON. To avoid truncation on large tabs: keep tab HTML minimal and compact (no comments, no long attribute lists), or build the tab in pieces — first set_tab with a skeleton, then refine with get_tab + set_tab edits.` });
+          saveMessages();
+          continue;
+        }
+        addMessage('error', 'Giving up after 3 malformed tool calls.');
         break;
       }
       if (response.content?.trim()) addMessage('assistant', response.content.trim());
