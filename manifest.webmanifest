@@ -2,6 +2,7 @@
   "name": "Martin's Super Webapp",
   "short_name": "SuperApp",
   "description": "Martin's personal mobile-first progressive web app, self-built with AI.",
+  "id": "/martin-superwebapp/",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
