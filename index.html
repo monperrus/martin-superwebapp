@@ -885,6 +885,17 @@ function renderNavTabs() {
   buildBtn.classList.toggle('active', activeTab === 'build');
 }
 
+function refreshTabsFromStorage() {
+  const tabIds = new Set(getTabs().map(tab => tab.id));
+  Object.keys(tabIframes).forEach(id => {
+    if (tabIds.has(id)) return;
+    document.getElementById(`pane-${id}`)?.remove();
+    delete tabIframes[id];
+  });
+  if (activeTab !== 'build' && !tabIds.has(activeTab)) activeTab = 'build';
+  renderNavTabs();
+}
+
 function activateTab(id) {
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
@@ -1004,7 +1015,7 @@ function renderMessages() {
 document.addEventListener('DOMContentLoaded', () => {
   loadSettings();
   loadMessages();
-  renderNavTabs();
+  refreshTabsFromStorage();
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./service-worker.js').catch(() => {});
@@ -1091,6 +1102,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Build nav button
   document.getElementById('nav-btn-build').onclick = () => activateTab('build');
+
+  // An installed PWA can resume without DOMContentLoaded after tabs change elsewhere.
+  window.addEventListener('pageshow', refreshTabsFromStorage);
+  window.addEventListener('focus', refreshTabsFromStorage);
+  window.addEventListener('storage', event => {
+    if (event.key === TABS_KEY) refreshTabsFromStorage();
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) refreshTabsFromStorage();
+  });
 
   // Welcome
   if (messages.length === 0) {
