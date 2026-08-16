@@ -25,20 +25,22 @@
   --safe-b: env(safe-area-inset-bottom, 0px);
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
+/* Viewport units (vh/dvh) are misreported by some standalone webviews
+   (installed PWA), pushing the bottom nav off-screen. Percent heights
+   resolve against the real initial containing block in every context:
+   browser tab, installed app, keyboard open/closed. */
+html, body { height: 100%; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: var(--bg);
   color: var(--text);
-  /* 100vh fallback for standalone webviews without dvh support. */
-  height: 100vh;
-  height: 100dvh;
+  height: 100%;
   overflow: hidden;
 }
 .app {
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  height: 100dvh;
+  height: 100%;
 }
 
 /* ── Tab content area ─────────────────────────────────────── */
