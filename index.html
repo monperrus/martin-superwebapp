@@ -388,7 +388,7 @@ body {
         <div class="share-actions">
           <button class="btn-small" id="publish-gist-btn">Publish public GitHub Gist</button>
         </div>
-        <label>GitHub token (only needed to publish)
+        <label id="github-token-field">GitHub token (only needed to publish)
           <input id="github-token-input" type="password" autocomplete="off" placeholder="Fine-grained token with Gists: read/write">
         </label>
         <p class="share-note">The token is stored only in this browser to prefill future publishes. Publishing creates a public Gist and automatically generates the share link from its raw URL.</p>
@@ -1292,7 +1292,9 @@ function openShareModal() {
     select.appendChild(option);
   });
   document.getElementById('publish-gist-btn').disabled = !tabs.length;
-  document.getElementById('github-token-input').value = localStorage.getItem(GITHUB_TOKEN_KEY) || '';
+  const token = localStorage.getItem(GITHUB_TOKEN_KEY) || '';
+  document.getElementById('github-token-input').value = token;
+  document.getElementById('github-token-field').hidden = !!token;
   document.getElementById('share-modal').classList.add('open');
 }
 
@@ -1304,6 +1306,7 @@ async function publishSelectedTabToGist() {
   if (!tab) { alert('Choose a tab to share.'); return; }
   if (!token) { alert('Enter a GitHub token with Gists read/write permission.'); return; }
   localStorage.setItem(GITHUB_TOKEN_KEY, token);
+  document.getElementById('github-token-field').hidden = true;
 
   const button = document.getElementById('publish-gist-btn');
   button.disabled = true;
@@ -1371,7 +1374,7 @@ async function importSharedTab() {
     const tab = sharedVersion.tab;
     const exists = getTabs().some(item => item.id === tab.id);
     if (exists && !confirm(`Replace your existing "${tab.label}" tab with the shared version?`)) return;
-    if (!exists && !confirm(`Add the shared "${tab.label}" tab to your app?`)) return;
+    if (!exists && !confirm(`Add the shared "${tab.label}" app?`)) return;
     const tabs = getTabs();
     const index = tabs.findIndex(item => item.id === tab.id);
     const previousTab = index >= 0 ? tabs[index] : null;
@@ -1632,6 +1635,7 @@ async function init() {
     const token = this.value.trim();
     if (token) localStorage.setItem(GITHUB_TOKEN_KEY, token);
     else localStorage.removeItem(GITHUB_TOKEN_KEY);
+    document.getElementById('github-token-field').hidden = !!token;
   };
   document.getElementById('copy-share-link-btn').onclick = async () => {
     const output = document.getElementById('share-link-output');
