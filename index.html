@@ -200,7 +200,8 @@ body {
 .input-area button:disabled { opacity: 0.5; cursor: not-allowed; }
 .input-area button.stop { background: var(--danger); }
 .input-area button.stop:hover { background: #da3633; }
-.build-mode { display: flex; align-items: center; gap: 8px; padding: 8px 12px 0; flex-wrap: wrap; }
+.build-mode { display: flex; justify-content: center; align-items: center; gap: 12px; padding: 12px 12px 4px; flex-wrap: wrap; }
+.build-mode .btn-small { min-width: 132px; min-height: 52px; font-size: 16px; padding: 10px 16px; }
 .build-mode .btn-small.active { background: var(--accent); border-color: var(--accent); color: white; }
 .build-mode label { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
 .build-mode select { max-width: 180px; background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 6px; font: inherit; }
@@ -349,14 +350,14 @@ body {
         <button class="btn-small" id="export-data-btn">Export data</button>
       </div>
       <div class="build-mode" aria-label="Build mode">
-        <button class="btn-small active" id="new-tab-mode-btn" type="button">New tab</button>
+        <button class="btn-small active" id="new-tab-mode-btn" type="button" title="Describe what you want to have (a game, some music)">New tab</button>
         <button class="btn-small" id="modify-tab-mode-btn" type="button">Modify tab</button>
         <label id="modify-tab-picker" hidden>App <select id="modify-tab-select"></select></label>
       </div>
       <div id="messages"></div>
       <div id="status" hidden></div>
       <div class="input-area">
-        <textarea id="chat-input" placeholder="Ask the AI to build a new tab…" rows="2"></textarea>
+        <textarea id="chat-input" placeholder="Describe what you want to have (a game, some music)" rows="2"></textarea>
         <button id="send-btn">Send</button>
       </div>
     </div>
@@ -796,7 +797,7 @@ function setBuildMode(mode) {
   document.getElementById('modify-tab-mode-btn').classList.toggle('active', isModify);
   document.getElementById('modify-tab-picker').hidden = !isModify;
   if (isModify) populateModifyTabSelect();
-  document.getElementById('chat-input').placeholder = isModify ? 'Describe the change…' : 'Ask the AI to build a new tab…';
+  document.getElementById('chat-input').placeholder = isModify ? 'Describe the change…' : 'Describe what you want to have (a game, some music)';
 }
 
 function getBuildInstruction() {
