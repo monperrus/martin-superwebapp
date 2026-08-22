@@ -391,7 +391,7 @@ body {
         <label>GitHub token (only needed to publish)
           <input id="github-token-input" type="password" autocomplete="off" placeholder="Fine-grained token with Gists: read/write">
         </label>
-        <p class="share-note">The token is used only for this request and is never saved. Publishing creates a public Gist and automatically generates the share link from its raw URL.</p>
+        <p class="share-note">The token is stored only in this browser to prefill future publishes. Publishing creates a public Gist and automatically generates the share link from its raw URL.</p>
         <div class="share-actions"><button class="btn-small" id="native-share-btn" hidden>Share</button></div>
         <div class="share-result" id="share-result">
           <label>Share link <input id="share-link-output" type="text" readonly></label>
@@ -412,6 +412,7 @@ const API_KEY_KEY     = 'agent_api_key';
 const MSGS_KEY        = 'agent_messages';
 const MODEL_KEY       = 'agent_model';
 const API_URL_KEY     = 'agent_api_url';
+const GITHUB_TOKEN_KEY = 'github_token';
 const CONFIGS_KEY     = 'agent_configs';
 const ACTIVE_CFG_KEY  = 'agent_active_config';
 const MAX_HISTORY     = 50;
@@ -1291,6 +1292,7 @@ function openShareModal() {
     select.appendChild(option);
   });
   document.getElementById('publish-gist-btn').disabled = !tabs.length;
+  document.getElementById('github-token-input').value = localStorage.getItem(GITHUB_TOKEN_KEY) || '';
   document.getElementById('share-modal').classList.add('open');
 }
 
@@ -1301,6 +1303,7 @@ async function publishSelectedTabToGist() {
   const token = document.getElementById('github-token-input').value.trim();
   if (!tab) { alert('Choose a tab to share.'); return; }
   if (!token) { alert('Enter a GitHub token with Gists read/write permission.'); return; }
+  localStorage.setItem(GITHUB_TOKEN_KEY, token);
 
   const button = document.getElementById('publish-gist-btn');
   button.disabled = true;
@@ -1340,7 +1343,6 @@ async function publishSelectedTabToGist() {
     const file = gist.files?.[filename];
     if (!file?.raw_url) throw new Error('GitHub did not return a raw URL for the Gist.');
     await saveTabServer(tab.id, { ...tab.server, url: { type: 'gist', value: file.raw_url } });
-    document.getElementById('github-token-input').value = '';
     showShareLink(file.raw_url);
   } catch (error) {
     alert(`Could not publish the tab: ${error.message}`);
@@ -1626,6 +1628,11 @@ async function init() {
   // Sharing
   document.getElementById('share-btn').onclick = openShareModal;
   document.getElementById('publish-gist-btn').onclick = publishSelectedTabToGist;
+  document.getElementById('github-token-input').onchange = function() {
+    const token = this.value.trim();
+    if (token) localStorage.setItem(GITHUB_TOKEN_KEY, token);
+    else localStorage.removeItem(GITHUB_TOKEN_KEY);
+  };
   document.getElementById('copy-share-link-btn').onclick = async () => {
     const output = document.getElementById('share-link-output');
     try { await navigator.clipboard.writeText(output.value); }
