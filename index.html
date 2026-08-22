@@ -1289,9 +1289,11 @@ async function importSharedTab() {
     if (url.protocol !== 'https:') throw new Error('Only HTTPS tab URLs can be imported.');
     const response = await fetch(url.href, { credentials: 'omit' });
     if (!response.ok) throw new Error(`The tab URL returned ${response.status}.`);
-    const document = await response.json();
-    if (!validSharedTab(document)) throw new Error('This URL does not contain a supported Super Webapp tab document.');
-    const tab = document.tab;
+    // Do not shadow the global DOM document. Firefox resolves the later
+    // document.querySelector() to this parsed JSON object otherwise.
+    const sharedDocument = await response.json();
+    if (!validSharedTab(sharedDocument)) throw new Error('This URL does not contain a supported Super Webapp tab document.');
+    const tab = sharedDocument.tab;
     const exists = getTabs().some(item => item.id === tab.id);
     if (exists && !confirm(`Replace your existing "${tab.label}" tab with the shared version?`)) return;
     if (!exists && !confirm(`Add the shared "${tab.label}" tab to your app?`)) return;
