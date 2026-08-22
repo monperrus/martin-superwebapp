@@ -1,4 +1,4 @@
-const CACHE_NAME = 'martin-superwebapp-v2';
+const CACHE_NAME = 'martin-superwebapp-v6';
 const CACHE_PREFIX = 'martin-superwebapp-';
 const APP_ASSETS = [
   './',
