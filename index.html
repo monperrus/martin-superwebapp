@@ -416,7 +416,6 @@ const CONFIGS_KEY     = 'agent_configs';
 const ACTIVE_CFG_KEY  = 'agent_active_config';
 const MAX_HISTORY     = 50;
 const SHARE_PARAM     = 'tab';
-const TAB_DOCUMENT_VERSION = 1;
 const DB_NAME = 'martin-superwebapp';
 const DB_VERSION = 1;
 let appDatabase = null;
@@ -1203,14 +1202,32 @@ function base64UrlDecode(value) {
   return new TextDecoder().decode(Uint8Array.from(binary, char => char.charCodeAt(0)));
 }
 
-function makeTabDocument(tab) {
-  return { version: TAB_DOCUMENT_VERSION, type: 'martin-superwebapp-tab', tab: { id: tab.id, label: tab.label, html: tab.html } };
+function validSharedTabVersion(version) {
+  const tab = version?.tab;
+  return tab && typeof tab.id === 'string' && typeof tab.label === 'string' && typeof tab.html === 'string'
+    && typeof version.currentHash === 'string'
+    && (typeof version.previousHash === 'string' || version.previousHash === null)
+    && typeof version.prompt === 'string';
 }
 
-function validSharedTab(document) {
-  const tab = document?.tab;
-  return document?.type === 'martin-superwebapp-tab' && document?.version === TAB_DOCUMENT_VERSION
-    && tab && typeof tab.id === 'string' && typeof tab.label === 'string' && typeof tab.html === 'string';
+function getSharedTabVersions(sharedDocument) {
+  if (!sharedDocument || typeof sharedDocument !== 'object' || Array.isArray(sharedDocument)) return [];
+  return Object.entries(sharedDocument)
+    .filter(([version, value]) => /^(?:[1-9]\d*)$/.test(version) && validSharedTabVersion(value))
+    .sort(([a], [b]) => Number(a) - Number(b));
+}
+
+async function makeTabDocument(tab) {
+  const currentHash = await hashTabVersion(tab);
+  const latestSnapshot = getHistory().find(snapshot => snapshot.tabId === tab.id && snapshot.currentHash === currentHash);
+  return {
+    '1': {
+      tab: { id: tab.id, label: tab.label, html: tab.html },
+      currentHash: latestSnapshot?.currentHash ?? currentHash,
+      previousHash: latestSnapshot?.previousHash ?? null,
+      prompt: latestSnapshot?.prompt ?? 'Published shared tab'
+    }
+  };
 }
 
 function makeShareUrl(publicTabUrl) {
@@ -1262,7 +1279,7 @@ async function publishSelectedTabToGist() {
       body: JSON.stringify({
         description: `Martin's Super Webapp tab: ${tab.label}`,
         public: true,
-        files: { [`${tab.id}.superwebapp-tab.json`]: { content: JSON.stringify(makeTabDocument(tab), null, 2) } }
+        files: { [`${tab.id}.superwebapp-tab.json`]: { content: JSON.stringify(await makeTabDocument(tab), null, 2) } }
       })
     });
     const gist = await response.json();
@@ -1292,8 +1309,10 @@ async function importSharedTab() {
     // Do not shadow the global DOM document. Firefox resolves the later
     // document.querySelector() to this parsed JSON object otherwise.
     const sharedDocument = await response.json();
-    if (!validSharedTab(sharedDocument)) throw new Error('This URL does not contain a supported Super Webapp tab document.');
-    const tab = sharedDocument.tab;
+    const versions = getSharedTabVersions(sharedDocument);
+    if (!versions.length) throw new Error('This URL does not contain a supported Super Webapp tab document.');
+    const [version, sharedVersion] = versions.at(-1);
+    const tab = sharedVersion.tab;
     const exists = getTabs().some(item => item.id === tab.id);
     if (exists && !confirm(`Replace your existing "${tab.label}" tab with the shared version?`)) return;
     if (!exists && !confirm(`Add the shared "${tab.label}" tab to your app?`)) return;
@@ -1302,7 +1321,7 @@ async function importSharedTab() {
     const previousTab = index >= 0 ? tabs[index] : null;
     const importedTab = { ...tab, shared: true };
     if (index >= 0) tabs[index] = importedTab; else tabs.push(importedTab);
-    await commitTabMutation(tabs, importedTab, 'Imported shared tab', previousTab, importedTab);
+    await commitTabMutation(tabs, importedTab, sharedVersion.prompt, previousTab, importedTab);
     const iframe = tabIframes[tab.id] || document.querySelector(`#pane-${CSS.escape(tab.id)} iframe`);
     if (iframe) {
       iframe.setAttribute('sandbox', 'allow-scripts allow-forms allow-modals');
