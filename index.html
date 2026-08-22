@@ -341,6 +341,8 @@ body {
         <label>API Key <input type="password" id="api-key-input" placeholder="sk-..."></label>
         <label>Model <input type="text" id="model-select" value="gpt-4o" style="width:130px"></label>
         <label>API URL <select id="api-url-input" style="width:190px"></select></label>
+        <span id="storage-usage" style="font-size:11px;color:var(--text-muted)">Storage: loading…</span>
+        <button class="btn-small" id="export-data-btn">Export data</button>
       </div>
       <div id="messages"></div>
       <div id="status" hidden></div>
@@ -404,8 +406,8 @@ body {
 // ============================================================
 // 1. STORAGE — tabs + version history
 // ============================================================
-const TABS_KEY        = 'msw_tabs';
-const HISTORY_KEY     = 'msw_history';
+const TABS_KEY        = 'msw_tabs'; // legacy migration source only
+const HISTORY_KEY     = 'msw_history'; // legacy migration source only
 const API_KEY_KEY     = 'agent_api_key';
 const MSGS_KEY        = 'agent_messages';
 const MODEL_KEY       = 'agent_model';
@@ -415,35 +417,138 @@ const ACTIVE_CFG_KEY  = 'agent_active_config';
 const MAX_HISTORY     = 50;
 const SHARE_PARAM     = 'tab';
 const TAB_DOCUMENT_VERSION = 1;
+const DB_NAME = 'martin-superwebapp';
+const DB_VERSION = 1;
+let appDatabase = null;
+let tabs = [];
+let historyEntries = [];
+let storageWriteQueue = Promise.resolve();
+let storageChannel = null;
+let persistenceRequested = false;
 
-function getTabs() {
-  try { return JSON.parse(localStorage.getItem(TABS_KEY)) || []; } catch { return []; }
+const clone = value => value === undefined ? undefined : structuredClone(value);
+function requestResult(request) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('IndexedDB request failed.'));
+  });
 }
-function setTabs(tabs) {
-  localStorage.setItem(TABS_KEY, JSON.stringify(tabs));
+function transactionDone(transaction) {
+  return new Promise((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onabort = transaction.onerror = () => reject(transaction.error || new Error('IndexedDB transaction aborted.'));
+  });
 }
+function storageError(error) {
+  const reason = error?.name === 'QuotaExceededError' ? 'Storage quota is full.' : (error?.message || 'Storage is unavailable.');
+  setStatus(`Storage error: ${reason}`);
+  const container = document.getElementById('messages');
+  if (container) { const line = document.createElement('div'); line.className = 'msg error'; line.textContent = `Storage error: ${reason} Export your data or retry; changes were not reported as saved.`; container.appendChild(line); }
+}
+function queueStorageWrite(work) {
+  const result = storageWriteQueue.then(work, work);
+  storageWriteQueue = result.catch(() => {});
+  return result;
+}
+function openAppDatabase() {
+  if (!('indexedDB' in window)) return Promise.reject(new Error('IndexedDB is unavailable in this browser.'));
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains('tabs')) db.createObjectStore('tabs', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('history')) {
+        const store = db.createObjectStore('history', { keyPath: 'historyId', autoIncrement: true });
+        store.createIndex('byTimestamp', 'timestamp');
+        store.createIndex('byTabAndTimestamp', ['tabId', 'timestamp']);
+      }
+      if (!db.objectStoreNames.contains('state')) db.createObjectStore('state', { keyPath: 'key' });
+      if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'key' });
+    };
+    request.onblocked = () => reject(new Error('Database upgrade is blocked by another open app window. Close it and retry.'));
+    request.onerror = () => reject(request.error || new Error('Could not open IndexedDB.'));
+    request.onsuccess = () => resolve(request.result);
+  });
+}
+async function loadTabs() {
+  const tx = appDatabase.transaction('tabs');
+  const rows = await requestResult(tx.objectStore('tabs').getAll()); await transactionDone(tx);
+  return rows.sort((a, b) => a.position - b.position).map(clone);
+}
+async function replaceTabs(nextTabs) {
+  return queueStorageWrite(async () => {
+    const tx = appDatabase.transaction('tabs', 'readwrite'), store = tx.objectStore('tabs');
+    store.clear(); nextTabs.forEach((tab, position) => store.put({ ...clone(tab), position })); await transactionDone(tx);
+  });
+}
+async function loadHistory() {
+  const tx = appDatabase.transaction('history'); const rows = await requestResult(tx.objectStore('history').getAll()); await transactionDone(tx);
+  return rows.sort((a, b) => b.timestamp - a.timestamp || b.historyId - a.historyId).map(clone);
+}
+async function addHistoryEntry(entry) {
+  return queueStorageWrite(async () => {
+    const tx = appDatabase.transaction('history', 'readwrite'), store = tx.objectStore('history');
+    store.add(clone(entry));
+    const all = await requestResult(store.getAll());
+    all.sort((a, b) => a.timestamp - b.timestamp || a.historyId - b.historyId).slice(0, Math.max(0, all.length - MAX_HISTORY)).forEach(item => store.delete(item.historyId));
+    await transactionDone(tx);
+  });
+}
+async function loadMessages() {
+  const tx = appDatabase.transaction('state'); const record = await requestResult(tx.objectStore('state').get('messages')); await transactionDone(tx);
+  return Array.isArray(record?.value) ? clone(record.value) : [];
+}
+async function replaceMessages(nextMessages) {
+  return queueStorageWrite(async () => {
+    const tx = appDatabase.transaction('state', 'readwrite'); tx.objectStore('state').put({ key: 'messages', value: clone(nextMessages) }); await transactionDone(tx);
+  });
+}
+async function migrateLocalStorage() {
+  const tx = appDatabase.transaction(['tabs', 'history', 'state', 'meta'], 'readwrite');
+  const meta = tx.objectStore('meta');
+  if (await requestResult(meta.get('storageMigration'))) { await transactionDone(tx); return; }
+  const read = key => { const raw = localStorage.getItem(key); if (raw === null) return { value: [], valid: true }; try { const value = JSON.parse(raw); return { value: Array.isArray(value) ? value : [], valid: Array.isArray(value) }; } catch { return { value: [], valid: false }; } };
+  const legacyTabs = read(TABS_KEY), legacyHistory = read(HISTORY_KEY), legacyMessages = read(MSGS_KEY);
+  const validTabs = Array.isArray(legacyTabs.value) ? legacyTabs.value.filter(t => t && typeof t.id === 'string') : [];
+  validTabs.forEach((tab, position) => tx.objectStore('tabs').put({ ...clone(tab), position }));
+  const expanded = (Array.isArray(legacyHistory.value) ? legacyHistory.value : []).flatMap((entry, sourceIndex) => {
+    if (entry?.tab?.id) return [{ ...clone(entry), tabId: entry.tab.id, _order: sourceIndex }];
+    return Array.isArray(entry?.tabs) ? entry.tabs.filter(tab => tab?.id).map((tab, tabIndex) => ({ timestamp: entry.timestamp, tab: clone(tab), tabId: tab.id, _order: sourceIndex * 100000 + tabIndex })) : [];
+  }).sort((a, b) => b.timestamp - a.timestamp || b._order - a._order).slice(0, MAX_HISTORY);
+  expanded.forEach(({ _order, ...entry }) => tx.objectStore('history').add(entry));
+  tx.objectStore('state').put({ key: 'messages', value: Array.isArray(legacyMessages.value) ? clone(legacyMessages.value) : [] });
+  meta.put({ key: 'storageMigration', value: 1, completedAt: Date.now() });
+  await transactionDone(tx);
+  // Verify persisted state before deleting only valid legacy source values.
+  const [storedTabs, storedHistory] = await Promise.all([loadTabs(), loadHistory()]);
+  if (storedTabs.length === validTabs.length && storedHistory.length === expanded.length) {
+    if (legacyTabs.valid) localStorage.removeItem(TABS_KEY);
+    if (legacyHistory.valid) localStorage.removeItem(HISTORY_KEY);
+    if (legacyMessages.valid) localStorage.removeItem(MSGS_KEY);
+  }
+  if (!legacyTabs.valid || !legacyHistory.valid || !legacyMessages.valid) storageError(new Error('Some legacy storage was malformed and was left untouched for recovery.'));
+}
+function getTabs() { return clone(tabs); }
+function getHistory() { return clone(historyEntries); }
+async function commitTabMutation(nextTabs, tab, prompt, previousTab, currentTab) {
+  const [previousHash, currentHash] = await Promise.all([hashTabVersion(previousTab), hashTabVersion(currentTab)]);
+  await queueStorageWrite(async () => {
+    const tx = appDatabase.transaction(['tabs', 'history'], 'readwrite');
+    const tabStore = tx.objectStore('tabs'); tabStore.clear(); nextTabs.forEach((item, position) => tabStore.put({ ...clone(item), position }));
+    tx.objectStore('history').add({ timestamp: Date.now(), tabId: tab.id, tab: clone(tab), prompt, hashAlgorithm: 'SHA-256', previousHash, currentHash });
+    await transactionDone(tx);
+  });
+  tabs = clone(nextTabs); historyEntries = await loadHistory();
+  storageChannel?.postMessage({ type: 'tabs-changed' });
+  if (!persistenceRequested) { persistenceRequested = true; navigator.storage?.persist?.().then(granted => { const tx = appDatabase.transaction('meta', 'readwrite'); tx.objectStore('meta').put({ key: 'persistence', value: !!granted, checkedAt: Date.now() }); return transactionDone(tx); }).catch(() => {}); }
+}
+
 async function hashTabVersion(tab) {
   const bytes = new TextEncoder().encode(JSON.stringify(tab ?? null));
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-async function saveTabSnapshot(tab, prompt = activePrompt, previousTab = tab, currentTab = tab) {
-  if (!tab) return;
-  const [previousHash, currentHash] = await Promise.all([hashTabVersion(previousTab), hashTabVersion(currentTab)]);
-  const history = getHistory();
-  history.unshift({ timestamp: Date.now(), tab: JSON.parse(JSON.stringify(tab)), prompt, hashAlgorithm: 'SHA-256', previousHash, currentHash });
-  if (history.length > MAX_HISTORY) history.length = MAX_HISTORY;
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-}
-function getHistory() {
-  try {
-    const history = JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
-    // History used to contain complete tab arrays. Expand those legacy entries so
-    // previous versions remain available as individual tab revisions.
-    return history.flatMap(entry => entry.tab ? [entry] : (entry.tabs || []).map(tab => ({ timestamp: entry.timestamp, tab })));
-  } catch { return []; }
-}
 
 // ============================================================
 // 2. SANDBOXED JS EXECUTION
@@ -617,11 +722,8 @@ function saveSettings() {
   document.getElementById('model-badge').textContent = document.getElementById('model-select').value;
 }
 
-function loadMessages() {
-  try { messages = JSON.parse(localStorage.getItem(MSGS_KEY)) || []; } catch { messages = []; }
-  renderMessages();
-}
-function saveMessages() { localStorage.setItem(MSGS_KEY, JSON.stringify(messages)); }
+async function loadMessageCache() { messages = await loadMessages(); renderMessages(); }
+async function saveMessages() { await replaceMessages(messages); }
 
 // ── System prompt ────────────────────────────────────────────
 const SYSTEM_PROMPT = `You are the AI builder for Martin's Super Webapp — a mobile-first PWA. Your role is to create and modify tabs using the tools provided. Each tab is a self-contained HTML page displayed in an iframe.
@@ -662,7 +764,7 @@ Mobile-first rules (the app is primarily used on a phone):
 - Use flexbox or grid; avoid fixed pixel widths
 
 ## Data persistence
-Tabs share localStorage with the parent app (same origin). Namespace your keys: localStorage.setItem('msw_tab_TABID_key', value).
+Tabs share the origin with the parent app. Namespace small keys: localStorage.setItem('msw_tab_TABID_key', value). For large tab data, use a separate namespaced IndexedDB database such as msw-tab-TABID.
 
 ## execute_js
 Use execute_js(code) to inspect app state, test logic, or read/write localStorage from the parent context.
@@ -827,8 +929,7 @@ async function executeToolCall(tc) {
         if (idx >= 0) tabs[idx] = { id: params.id, label: params.label, html: params.html };
         else tabs.push({ id: params.id, label: params.label, html: params.html });
         const savedTab = tabs[idx >= 0 ? idx : tabs.length - 1];
-        await saveTabSnapshot(savedTab, activePrompt, previousTab, savedTab);
-        setTabs(tabs);
+        await commitTabMutation(tabs, savedTab, activePrompt, previousTab, savedTab);
         renderNavTabs();
         const existingIframe = tabIframes[params.id];
         if (existingIframe) {
@@ -853,8 +954,7 @@ async function executeToolCall(tc) {
         }
         const updatedTab = { ...tab, html: `${tab.html.slice(0, firstMatch)}${params.new_text}${tab.html.slice(firstMatch + params.old_text.length)}` };
         tabs[idx] = updatedTab;
-        await saveTabSnapshot(updatedTab, activePrompt, tab, updatedTab);
-        setTabs(tabs);
+        await commitTabMutation(tabs, updatedTab, activePrompt, tab, updatedTab);
         renderNavTabs();
         const existingIframe = tabIframes[updatedTab.id];
         if (existingIframe) {
@@ -870,9 +970,9 @@ async function executeToolCall(tc) {
         const tabs = getTabs();
         const idx = tabs.findIndex(t => t.id === params.id);
         if (idx < 0) { result = { error: `Tab not found: ${params.id}` }; break; }
-        await saveTabSnapshot(tabs[idx], activePrompt, tabs[idx], null);
+        const deletedTab = tabs[idx];
         tabs.splice(idx, 1);
-        setTabs(tabs);
+        await commitTabMutation(tabs, deletedTab, activePrompt, deletedTab, null);
         const pane = document.getElementById(`pane-${params.id}`);
         if (pane) pane.remove();
         delete tabIframes[params.id];
@@ -929,7 +1029,7 @@ async function processUserMessage(userText) {
   try {
     addMessage('user', userText);
     messages.push({ role: 'user', content: userText });
-    saveMessages();
+    await saveMessages();
 
     let iterations = 0;
     let malformedRetries = 0;
@@ -940,7 +1040,7 @@ async function processUserMessage(userText) {
       if (!response || cancelRequested) break;
 
       if (!response.tool_calls?.length) {
-        if (response.content) { addMessage('assistant', response.content); messages.push({ role: 'assistant', content: response.content }); saveMessages(); }
+        if (response.content) { addMessage('assistant', response.content); messages.push({ role: 'assistant', content: response.content }); await saveMessages(); }
         break;
       }
       if (response.finish_reason === 'length') {
@@ -949,7 +1049,7 @@ async function processUserMessage(userText) {
 
       const assistantMsg = { role: 'assistant', content: null, tool_calls: response.tool_calls };
       messages.push(assistantMsg);
-      saveMessages();
+      await saveMessages();
 
       let parsed;
       try {
@@ -961,7 +1061,7 @@ async function processUserMessage(userText) {
         if (malformedRetries < 3) {
           malformedRetries++;
           messages.push({ role: 'user', content: `Your last tool call arguments were invalid JSON (${e.message}). The call was not executed. Re-issue the tool call with valid JSON. To avoid truncation on large tabs: keep tab HTML minimal and compact (no comments, no long attribute lists), or build the tab in pieces — first set_tab with a skeleton, then refine with get_tab + set_tab edits.` });
-          saveMessages();
+          await saveMessages();
           continue;
         }
         addMessage('error', 'Giving up after 3 malformed tool calls.');
@@ -977,10 +1077,10 @@ async function processUserMessage(userText) {
         const result = await executeToolCall(tc);
         const out = result._out; delete result._out;
         const resultStr = JSON.stringify(result, null, 2);
-        if (tc.tool === 'execute_js') { if (out) addExecMessage(out); }
+        if (tc.tool === 'execute_js') { if (out) await addExecMessage(out); }
         else addMessage('tool', `✓ ${tc.tool}: ${resultStr}`);
         messages.push({ role: 'tool', tool_call_id: tc.id, content: resultStr });
-        saveMessages();
+        await saveMessages();
         if (tc.tool === 'finish') { done = true; addMessage('assistant', result.summary || 'Done.'); break; }
       }
       if (done) break;
@@ -1019,6 +1119,12 @@ function renderNavTabs() {
   buildBtn.classList.toggle('active', activeTab === 'build');
   // Rebuild panes for tabs that lost their DOM node (fresh document after cold resume).
   tabs.forEach(tab => {
+    const existing = tabIframes[tab.id];
+    if (existing) {
+      if (existing.srcdoc !== tab.html) existing.srcdoc = tab.html;
+      if (tab.shared) existing.setAttribute('sandbox', 'allow-scripts allow-forms allow-modals'); else existing.removeAttribute('sandbox');
+      return;
+    }
     if (document.getElementById(`pane-${tab.id}`)) return;
     const pane = document.createElement('div');
     pane.className = 'tab-pane';
@@ -1034,9 +1140,10 @@ function renderNavTabs() {
   });
 }
 
-function refreshTabsFromStorage() {
-  const tabs = getTabs();
-  const tabIds = new Set(tabs.map(tab => tab.id));
+async function refreshTabsFromDatabase() {
+  try { tabs = await loadTabs(); } catch (error) { storageError(error); return; }
+  const currentTabs = getTabs();
+  const tabIds = new Set(currentTabs.map(tab => tab.id));
   Object.keys(tabIframes).forEach(id => {
     if (tabIds.has(id)) return;
     document.getElementById(`pane-${id}`)?.remove();
@@ -1193,14 +1300,13 @@ async function importSharedTab() {
     const previousTab = index >= 0 ? tabs[index] : null;
     const importedTab = { ...tab, shared: true };
     if (index >= 0) tabs[index] = importedTab; else tabs.push(importedTab);
-    await saveTabSnapshot(importedTab, 'Imported shared tab', previousTab, importedTab);
-    setTabs(tabs);
+    await commitTabMutation(tabs, importedTab, 'Imported shared tab', previousTab, importedTab);
     const iframe = tabIframes[tab.id] || document.querySelector(`#pane-${CSS.escape(tab.id)} iframe`);
     if (iframe) {
       iframe.setAttribute('sandbox', 'allow-scripts allow-forms allow-modals');
       iframe.srcdoc = tab.html;
     }
-    refreshTabsFromStorage();
+    refreshTabsFromDatabase();
     activateTab(tab.id);
     addMessage('system', `Imported shared tab "${tab.label}".`);
   } catch (error) {
@@ -1272,10 +1378,10 @@ async function restoreTabSnapshot(idx) {
   const restoredTab = history[idx].tab;
   const tabs = getTabs();
   const tabIndex = tabs.findIndex(tab => tab.id === restoredTab.id);
-  await saveTabSnapshot(restoredTab, 'Restored from history', tabs[tabIndex], restoredTab);
+  const previousTab = tabIndex >= 0 ? tabs[tabIndex] : null;
   if (tabIndex >= 0) tabs[tabIndex] = restoredTab;
   else tabs.push(restoredTab);
-  setTabs(tabs);
+  await commitTabMutation(tabs, restoredTab, 'Restored from history', previousTab, restoredTab);
   const pane = document.getElementById(`pane-${restoredTab.id}`);
   if (pane) pane.remove();
   delete tabIframes[restoredTab.id];
@@ -1298,7 +1404,7 @@ function addMessage(role, content) {
   container.scrollTop = container.scrollHeight;
 }
 
-function addExecMessage(text) {
+async function addExecMessage(text) {
   const div = document.createElement('div');
   div.className = 'msg exec';
   div.textContent = text;
@@ -1306,7 +1412,7 @@ function addExecMessage(text) {
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
   messages.push({ role: 'exec', content: text });
-  saveMessages();
+  await saveMessages();
 }
 
 function renderMessages() {
@@ -1324,10 +1430,39 @@ function renderMessages() {
 // ============================================================
 // 8. INIT & EVENT BINDING
 // ============================================================
-function init() {
+function formatBytes(bytes) { if (!Number.isFinite(bytes)) return 'unknown'; const units = ['B', 'KiB', 'MiB', 'GiB']; let i = 0; while (bytes >= 1024 && i < units.length - 1) { bytes /= 1024; i++; } return `${bytes.toFixed(i ? 1 : 0)} ${units[i]}`; }
+async function updateStorageUsage() {
+  const output = document.getElementById('storage-usage');
+  if (!navigator.storage?.estimate) { output.textContent = 'Storage estimate unavailable'; return; }
+  try { const { usage, quota } = await navigator.storage.estimate(); output.textContent = `Storage estimate: ${formatBytes(usage || 0)} of ${formatBytes(quota || 0)}`; } catch { output.textContent = 'Storage estimate unavailable'; }
+}
+async function exportStorageData() {
+  try {
+    const payload = { exportedAt: new Date().toISOString(), tabs: await loadTabs(), history: await loadHistory(), messages: await loadMessages() };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a'); link.href = url; link.download = 'martin-superwebapp-export.json'; link.click(); URL.revokeObjectURL(url);
+  } catch (error) { storageError(error); }
+}
+
+async function init() {
+  const sendButton = document.getElementById('send-btn');
+  sendButton.disabled = true;
   loadSettings();
-  loadMessages();
-  refreshTabsFromStorage();
+  try {
+    appDatabase = await openAppDatabase();
+    await migrateLocalStorage();
+    [tabs, historyEntries, messages] = await Promise.all([loadTabs(), loadHistory(), loadMessages()]);
+    renderMessages();
+    await refreshTabsFromDatabase();
+    storageChannel = 'BroadcastChannel' in window ? new BroadcastChannel('martin-superwebapp-storage') : null;
+    if (storageChannel) storageChannel.onmessage = event => { if (event.data?.type === 'tabs-changed') refreshTabsFromDatabase(); };
+    updateStorageUsage();
+    sendButton.disabled = false;
+  } catch (error) {
+    storageError(error);
+    sendButton.disabled = true;
+    return;
+  }
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./service-worker.js').catch(() => {});
@@ -1375,6 +1510,7 @@ function init() {
   ['api-key-input','model-select','api-url-input'].forEach(id => {
     document.getElementById(id).onchange = saveSettings;
   });
+  document.getElementById('export-data-btn').onclick = exportStorageData;
 
   // Config management
   document.getElementById('config-select').onchange = function() {
@@ -1404,9 +1540,9 @@ function init() {
   };
 
   // Clear chat
-  document.getElementById('clear-chat-btn').onclick = e => {
+  document.getElementById('clear-chat-btn').onclick = async e => {
     e.stopPropagation();
-    messages = []; saveMessages(); renderMessages();
+    try { await replaceMessages([]); messages = []; renderMessages(); } catch (error) { storageError(error); }
   };
 
   // History
@@ -1426,14 +1562,12 @@ function init() {
   document.getElementById('nav-btn-build').onclick = () => activateTab('build');
 
   // An installed PWA can resume without DOMContentLoaded after tabs change elsewhere.
-  window.addEventListener('pageshow', refreshTabsFromStorage);
-  window.addEventListener('focus', refreshTabsFromStorage);
-  window.addEventListener('storage', event => {
-    if (event.key === TABS_KEY) refreshTabsFromStorage();
-  });
+  window.addEventListener('pageshow', refreshTabsFromDatabase);
+  window.addEventListener('focus', refreshTabsFromDatabase);
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) refreshTabsFromStorage();
+    if (!document.hidden) refreshTabsFromDatabase();
   });
+  window.addEventListener('pagehide', () => storageChannel?.close(), { once: true });
 
   importSharedTab();
 
