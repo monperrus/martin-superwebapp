@@ -925,14 +925,15 @@ async function executeToolCall(tc) {
         const tabs = getTabs();
         const idx = tabs.findIndex(t => t.id === params.id);
         const previousTab = idx >= 0 ? tabs[idx] : null;
-        if (idx >= 0) tabs[idx] = { id: params.id, label: params.label, html: params.html };
+        if (idx >= 0) tabs[idx] = { ...tabs[idx], id: params.id, label: params.label, html: params.html };
         else tabs.push({ id: params.id, label: params.label, html: params.html });
         const savedTab = tabs[idx >= 0 ? idx : tabs.length - 1];
         await commitTabMutation(tabs, savedTab, activePrompt, previousTab, savedTab);
         renderNavTabs();
         const existingIframe = tabIframes[params.id];
         if (existingIframe) {
-          existingIframe.removeAttribute('sandbox');
+          if (savedTab.shared) existingIframe.setAttribute('sandbox', 'allow-scripts allow-forms allow-modals');
+          else existingIframe.removeAttribute('sandbox');
           existingIframe.srcdoc = params.html;
         }
         result = { success: true, id: params.id, label: params.label, action: idx >= 0 ? 'updated' : 'created' };
@@ -1217,17 +1218,49 @@ function getSharedTabVersions(sharedDocument) {
     .sort(([a], [b]) => Number(a) - Number(b));
 }
 
-async function makeTabDocument(tab) {
+async function makeSharedTabVersion(tab, parentHash = undefined) {
   const currentHash = await hashTabVersion(tab);
   const latestSnapshot = getHistory().find(snapshot => snapshot.tabId === tab.id && snapshot.currentHash === currentHash);
   return {
-    '1': {
-      tab: { id: tab.id, label: tab.label, html: tab.html },
-      currentHash: latestSnapshot?.currentHash ?? currentHash,
-      previousHash: latestSnapshot?.previousHash ?? null,
-      prompt: latestSnapshot?.prompt ?? 'Published shared tab'
-    }
+    tab: { id: tab.id, label: tab.label, html: tab.html },
+    currentHash: latestSnapshot?.currentHash ?? currentHash,
+    previousHash: parentHash ?? latestSnapshot?.previousHash ?? null,
+    prompt: latestSnapshot?.prompt ?? 'Published shared tab'
   };
+}
+
+async function makeTabDocument(tab) { return { '1': await makeSharedTabVersion(tab) }; }
+
+async function appendSharedTabVersion(sharedDocument, tab) {
+  const versions = getSharedTabVersions(sharedDocument);
+  if (!versions.length) throw new Error('The existing Gist does not contain a supported Super Webapp tab document.');
+  const [latestVersion, latest] = versions.at(-1);
+  const nextVersion = String(Number(latestVersion) + 1);
+  return { ...sharedDocument, [nextVersion]: await makeSharedTabVersion(tab, latest.currentHash) };
+}
+
+function gistServer(tab) {
+  const serverUrl = tab.server?.url;
+  if (serverUrl?.type !== 'gist' || typeof serverUrl.value !== 'string') return null;
+  try {
+    const url = new URL(serverUrl.value);
+    const parts = url.pathname.split('/').filter(Boolean);
+    const rawIndex = parts.indexOf('raw');
+    const id = url.hostname === 'gist.githubusercontent.com' && rawIndex >= 2 ? parts[rawIndex - 1]
+      : url.hostname === 'api.github.com' && parts[0] === 'gists' ? parts[1]
+      : null;
+    return id ? { id, filename: rawIndex >= 0 ? decodeURIComponent(parts.at(-1)) : undefined, rawUrl: serverUrl.value } : null;
+  } catch { return null; }
+}
+
+async function saveTabServer(tabId, server) {
+  const nextTabs = getTabs();
+  const index = nextTabs.findIndex(tab => tab.id === tabId);
+  if (index < 0) return;
+  nextTabs[index] = { ...nextTabs[index], server };
+  await replaceTabs(nextTabs);
+  tabs = clone(nextTabs);
+  storageChannel?.postMessage({ type: 'tabs-changed' });
 }
 
 function makeShareUrl(publicTabUrl) {
@@ -1273,19 +1306,40 @@ async function publishSelectedTabToGist() {
   button.disabled = true;
   button.textContent = 'Publishing…';
   try {
-    const response = await fetch('https://api.github.com/gists', {
-      method: 'POST',
-      headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        description: `Martin's Super Webapp tab: ${tab.label}`,
-        public: true,
-        files: { [`${tab.id}.superwebapp-tab.json`]: { content: JSON.stringify(await makeTabDocument(tab), null, 2) } }
-      })
-    });
+    const headers = { Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+    const existingServer = gistServer(tab);
+    if (tab.server?.url && !existingServer) throw new Error(`Sharing to server type "${tab.server.url.type}" is not supported.`);
+    let filename = existingServer?.filename || `${tab.id}.superwebapp-tab.json`;
+    let response;
+    if (existingServer) {
+      const gistResponse = await fetch(`https://api.github.com/gists/${encodeURIComponent(existingServer.id)}`, { headers });
+      const existingGist = await gistResponse.json();
+      if (!gistResponse.ok) throw new Error(existingGist.message || `GitHub returned ${gistResponse.status}`);
+      const [existingFilename, existingFile] = Object.entries(existingGist.files || {}).find(([name, file]) => name === filename || file?.raw_url === existingServer.rawUrl) || [];
+      if (existingFilename) filename = existingFilename;
+      if (!existingFile?.raw_url) throw new Error(`GitHub did not return the shared tab file "${filename}".`);
+      const documentResponse = await fetch(existingFile.raw_url, { credentials: 'omit' });
+      if (!documentResponse.ok) throw new Error(`The existing tab document returned ${documentResponse.status}.`);
+      const nextDocument = await appendSharedTabVersion(await documentResponse.json(), tab);
+      response = await fetch(`https://api.github.com/gists/${encodeURIComponent(existingServer.id)}`, {
+        method: 'PATCH', headers,
+        body: JSON.stringify({ files: { [filename]: { content: JSON.stringify(nextDocument, null, 2) } } })
+      });
+    } else {
+      response = await fetch('https://api.github.com/gists', {
+        method: 'POST', headers,
+        body: JSON.stringify({
+          description: `Martin's Super Webapp tab: ${tab.label}`,
+          public: true,
+          files: { [filename]: { content: JSON.stringify(await makeTabDocument(tab), null, 2) } }
+        })
+      });
+    }
     const gist = await response.json();
     if (!response.ok) throw new Error(gist.message || `GitHub returned ${response.status}`);
-    const file = gist.files?.[`${tab.id}.superwebapp-tab.json`];
+    const file = gist.files?.[filename];
     if (!file?.raw_url) throw new Error('GitHub did not return a raw URL for the Gist.');
+    await saveTabServer(tab.id, { ...tab.server, url: { type: 'gist', value: file.raw_url } });
     document.getElementById('github-token-input').value = '';
     showShareLink(file.raw_url);
   } catch (error) {
