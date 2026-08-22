@@ -413,6 +413,8 @@ const MSGS_KEY        = 'agent_messages';
 const MODEL_KEY       = 'agent_model';
 const API_URL_KEY     = 'agent_api_url';
 const GITHUB_TOKEN_KEY = 'github_token';
+const INSTALLATION_ID_KEY = 'msw_installation_id';
+const USERNAME_KEY = 'msw_username';
 const CONFIGS_KEY     = 'agent_configs';
 const ACTIVE_CFG_KEY  = 'agent_active_config';
 const MAX_HISTORY     = 50;
@@ -622,6 +624,40 @@ function getConfigs() { try { return JSON.parse(localStorage.getItem(CONFIGS_KEY
 function setConfigs(c) { localStorage.setItem(CONFIGS_KEY, JSON.stringify(c)); }
 function getActiveCfgName() { return localStorage.getItem(ACTIVE_CFG_KEY) || ''; }
 function setActiveCfgName(n) { localStorage.setItem(ACTIVE_CFG_KEY, n); }
+
+const USERNAME_ADJECTIVES = [
+  'amber', 'brave', 'bright', 'calm', 'clever', 'cosmic', 'daring', 'eager', 'ember', 'gentle',
+  'glowing', 'golden', 'happy', 'hidden', 'jolly', 'kind', 'lively', 'lucky', 'mellow', 'mighty',
+  'misty', 'nimble', 'noble', 'playful', 'proud', 'quick', 'quiet', 'radiant', 'silver', 'sleepy',
+  'smart', 'sparkling', 'steady', 'sunny', 'swift', 'tidy', 'vivid', 'warm', 'wild', 'wonderful'
+];
+const USERNAME_ANIMALS = [
+  'alpaca', 'badger', 'beaver', 'bison', 'cat', 'dolphin', 'falcon', 'ferret', 'firefly', 'fox',
+  'gecko', 'giraffe', 'hedgehog', 'heron', 'koala', 'lemur', 'lion', 'llama', 'lynx', 'manatee',
+  'otter', 'owl', 'panda', 'penguin', 'quokka', 'rabbit', 'raccoon', 'raven', 'seal', 'sloth',
+  'sparrow', 'squirrel', 'tiger', 'tortoise', 'toucan', 'walrus', 'whale', 'wolf', 'wombat', 'yak'
+];
+
+function randomItem(items) {
+  const value = new Uint32Array(1);
+  crypto.getRandomValues(value);
+  return items[value[0] % items.length];
+}
+function suggestedUsername() { return `${randomItem(USERNAME_ADJECTIVES)}-${randomItem(USERNAME_ADJECTIVES)}-${randomItem(USERNAME_ANIMALS)}`; }
+function ensureInstallationId() {
+  if (localStorage.getItem(INSTALLATION_ID_KEY)) return;
+  localStorage.setItem(INSTALLATION_ID_KEY, crypto.randomUUID());
+}
+function ensureUsername() {
+  const existing = localStorage.getItem(USERNAME_KEY)?.trim();
+  if (existing) return existing;
+  const username = prompt('Choose a username for this installation.', suggestedUsername());
+  if (username === null) return null;
+  const value = username.trim();
+  if (!value) { alert('Please enter a username before sending a prompt.'); return null; }
+  localStorage.setItem(USERNAME_KEY, value);
+  return value;
+}
 
 function populateConfigSelect() {
   const sel = document.getElementById('config-select');
@@ -1527,6 +1563,7 @@ async function exportStorageData() {
 async function init() {
   const sendButton = document.getElementById('send-btn');
   sendButton.disabled = true;
+  ensureInstallationId();
   loadSettings();
   try {
     appDatabase = await openAppDatabase();
@@ -1565,6 +1602,7 @@ async function init() {
     const input = document.getElementById('chat-input');
     const text = input.value.trim();
     if (!text) return;
+    if (!ensureUsername()) return;
     input.value = '';
     input.style.height = '';
     await processUserMessage(text);
