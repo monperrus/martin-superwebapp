@@ -336,14 +336,13 @@ body {
       </div>
       <div id="settings-bar" style="display:none">
         <label>Config <select id="config-select" style="width:150px"></select></label>
-        <button class="btn-small" id="save-config-btn">Save</button>
         <button class="btn-small danger" id="delete-config-btn">Delete</button>
         <label>Name <input type="text" id="config-name-input" placeholder="my-config" style="width:90px"></label>
+        <button class="btn-small" id="save-config-btn">Save</button>
         <label>API Key <input type="password" id="api-key-input" placeholder="sk-..."></label>
         <label>Model <input type="text" id="model-select" value="gpt-4o" style="width:130px"></label>
         <label>API URL <select id="api-url-input" style="width:190px"></select></label>
         <label id="api-url-custom-label" hidden>Custom URL <input type="text" id="api-url-custom-input" placeholder="https://api.example.com/v1" style="width:220px"></label>
-        <span id="storage-usage" style="font-size:11px;color:var(--text-muted)">Storage: loading…</span>
         <button class="btn-small" id="export-data-btn">Export data</button>
       </div>
       <div class="build-hint">Describe a new tab to add, or a change to an existing one — e.g. "add a todo list tab" or "make the timer's background dark".</div>
@@ -1568,12 +1567,6 @@ function renderMessages() {
 // ============================================================
 // 8. INIT & EVENT BINDING
 // ============================================================
-function formatBytes(bytes) { if (!Number.isFinite(bytes)) return 'unknown'; const units = ['B', 'KiB', 'MiB', 'GiB']; let i = 0; while (bytes >= 1024 && i < units.length - 1) { bytes /= 1024; i++; } return `${bytes.toFixed(i ? 1 : 0)} ${units[i]}`; }
-async function updateStorageUsage() {
-  const output = document.getElementById('storage-usage');
-  if (!navigator.storage?.estimate) { output.textContent = 'Storage estimate unavailable'; return; }
-  try { const { usage, quota } = await navigator.storage.estimate(); output.textContent = `Storage estimate: ${formatBytes(usage || 0)} of ${formatBytes(quota || 0)}`; } catch { output.textContent = 'Storage estimate unavailable'; }
-}
 async function exportStorageData() {
   try {
     const payload = { exportedAt: new Date().toISOString(), tabs: await loadTabs(), history: await loadHistory(), messages: await loadMessages() };
@@ -1595,7 +1588,6 @@ async function init() {
     await refreshTabsFromDatabase();
     storageChannel = 'BroadcastChannel' in window ? new BroadcastChannel('martin-superwebapp-storage') : null;
     if (storageChannel) storageChannel.onmessage = event => { if (event.data?.type === 'tabs-changed') refreshTabsFromDatabase(); };
-    updateStorageUsage();
     sendButton.disabled = false;
   } catch (error) {
     storageError(error);
