@@ -342,6 +342,7 @@ body {
         <label>API Key <input type="password" id="api-key-input" placeholder="sk-..."></label>
         <label>Model <input type="text" id="model-select" value="gpt-4o" style="width:130px"></label>
         <label>API URL <select id="api-url-input" style="width:190px"></select></label>
+        <label id="api-url-custom-label" hidden>Custom URL <input type="text" id="api-url-custom-input" placeholder="https://api.example.com/v1" style="width:220px"></label>
         <span id="storage-usage" style="font-size:11px;color:var(--text-muted)">Storage: loading…</span>
         <button class="btn-small" id="export-data-btn">Export data</button>
       </div>
@@ -683,9 +684,8 @@ function loadConfig(name) {
   if (!cfg) return false;
   document.getElementById('api-key-input').value = cfg.apiKey || '';
   document.getElementById('model-select').value = cfg.model || 'gpt-4o';
-  const urlSel = document.getElementById('api-url-input');
   const url = cfg.apiUrl || INFERENCE_URLS[0];
-  for (const opt of urlSel.options) { if (opt.value === url) { opt.selected = true; break; } }
+  selectApiUrl(url);
   document.getElementById('model-badge').textContent = cfg.model || 'gpt-4o';
   localStorage.setItem(API_KEY_KEY, cfg.apiKey || '');
   localStorage.setItem(MODEL_KEY, cfg.model || 'gpt-4o');
@@ -701,7 +701,7 @@ function saveCurrentAsConfig(name) {
   configs[name] = {
     apiKey: document.getElementById('api-key-input').value,
     model:  document.getElementById('model-select').value,
-    apiUrl: document.getElementById('api-url-input').value
+    apiUrl: getApiUrl()
   };
   setConfigs(configs);
   setActiveCfgName(name);
@@ -723,13 +723,30 @@ function deleteConfig(name) {
 const INFERENCE_URLS = [
   "https://openrouter.ai/api/v1",
   "https://api.z.ai/api/coding/paas/v4",
-  "https://assert-service.services.ai.azure.com/openai/deployments/deepseek-v4-flash?api-version=2024-12-01-preview",
-  "https://assert-service.services.ai.azure.com/openai/deployments/kimi-k2.6?api-version=2024-12-01-preview",
   "https://integrate.api.nvidia.com/v1",
   "https://api.modelstream.ai/v1",
   "https://opencode.ai/zen/v1",
   "https://gpu1.eecs.kth.se/services/ollama-keys/v1"
 ];
+const CUSTOM_URL_VALUE = '__custom__';
+
+// Selects `url` in the API URL dropdown, falling back to the Custom… option
+// (and revealing its text input) when `url` isn't one of the presets.
+function selectApiUrl(url) {
+  const urlSel = document.getElementById('api-url-input');
+  const customLabel = document.getElementById('api-url-custom-label');
+  const customInput = document.getElementById('api-url-custom-input');
+  const isPreset = INFERENCE_URLS.includes(url);
+  urlSel.value = isPreset ? url : CUSTOM_URL_VALUE;
+  customLabel.hidden = isPreset;
+  customInput.value = isPreset ? '' : (url || '');
+}
+
+function getApiUrl() {
+  const urlSel = document.getElementById('api-url-input');
+  if (urlSel.value === CUSTOM_URL_VALUE) return document.getElementById('api-url-custom-input').value.trim();
+  return urlSel.value;
+}
 
 function loadSettings() {
   const urlSel = document.getElementById('api-url-input');
@@ -739,6 +756,10 @@ function loadSettings() {
     opt.value = url; opt.textContent = url;
     urlSel.appendChild(opt);
   });
+  const customOpt = document.createElement('option');
+  customOpt.value = CUSTOM_URL_VALUE; customOpt.textContent = 'Custom…';
+  urlSel.appendChild(customOpt);
+
   const activeName = getActiveCfgName();
   const configs = getConfigs();
   if (activeName && configs[activeName]) {
@@ -746,8 +767,7 @@ function loadSettings() {
   } else {
     document.getElementById('api-key-input').value = localStorage.getItem(API_KEY_KEY) || '';
     document.getElementById('model-select').value  = localStorage.getItem(MODEL_KEY)   || 'gpt-4o';
-    const savedUrl = localStorage.getItem(API_URL_KEY) || INFERENCE_URLS[0];
-    for (const opt of urlSel.options) { if (opt.value === savedUrl) { opt.selected = true; break; } }
+    selectApiUrl(localStorage.getItem(API_URL_KEY) || INFERENCE_URLS[0]);
     document.getElementById('model-badge').textContent = localStorage.getItem(MODEL_KEY) || 'gpt-4o';
   }
   populateConfigSelect();
@@ -756,7 +776,7 @@ function loadSettings() {
 function saveSettings() {
   localStorage.setItem(API_KEY_KEY, document.getElementById('api-key-input').value);
   localStorage.setItem(MODEL_KEY,   document.getElementById('model-select').value);
-  localStorage.setItem(API_URL_KEY, document.getElementById('api-url-input').value);
+  localStorage.setItem(API_URL_KEY, getApiUrl());
   document.getElementById('model-badge').textContent = document.getElementById('model-select').value;
 }
 
@@ -894,7 +914,7 @@ function buildAPIMessages() {
 async function callLLM() {
   const apiKey = document.getElementById('api-key-input').value;
   const model   = document.getElementById('model-select').value;
-  const apiUrl  = document.getElementById('api-url-input').value;
+  const apiUrl  = getApiUrl();
 
   if (!apiKey) { addMessage('system', 'Set your API key in settings (tap the Build header).'); return null; }
 
@@ -1627,9 +1647,13 @@ async function init() {
   };
 
   // Settings auto-save
-  ['api-key-input','model-select','api-url-input'].forEach(id => {
+  ['api-key-input','model-select','api-url-custom-input'].forEach(id => {
     document.getElementById(id).onchange = saveSettings;
   });
+  document.getElementById('api-url-input').onchange = function() {
+    document.getElementById('api-url-custom-label').hidden = this.value !== CUSTOM_URL_VALUE;
+    saveSettings();
+  };
   document.getElementById('export-data-btn').onclick = exportStorageData;
 
   // Config management
@@ -1638,9 +1662,7 @@ async function init() {
     else {
       document.getElementById('api-key-input').value = localStorage.getItem(API_KEY_KEY) || '';
       document.getElementById('model-select').value  = localStorage.getItem(MODEL_KEY)   || 'gpt-4o';
-      const url = localStorage.getItem(API_URL_KEY) || INFERENCE_URLS[0];
-      const urlSel = document.getElementById('api-url-input');
-      for (const opt of urlSel.options) { if (opt.value === url) { opt.selected = true; break; } }
+      selectApiUrl(localStorage.getItem(API_URL_KEY) || INFERENCE_URLS[0]);
       document.getElementById('model-badge').textContent = localStorage.getItem(MODEL_KEY) || 'gpt-4o';
       setActiveCfgName('');
     }
