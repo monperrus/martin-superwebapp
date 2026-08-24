@@ -207,7 +207,21 @@ body {
   color: var(--text-muted);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
+.spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--text-muted);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── Settings bar ─────────────────────────────────────────── */
 #settings-bar {
@@ -444,9 +458,9 @@ function transactionDone(transaction) {
 }
 function storageError(error) {
   const reason = error?.name === 'QuotaExceededError' ? 'Storage quota is full.' : (error?.message || 'Storage is unavailable.');
-  setStatus(`Storage error: ${reason}`);
+  setStatus(`Storage error: ${reason}`, { spinner: false });
   const container = document.getElementById('messages');
-  if (container) { const line = document.createElement('div'); line.className = 'msg error'; line.textContent = `Storage error: ${reason} Export your data or retry; changes were not reported as saved.`; container.appendChild(line); }
+  if (container) { const line = document.createElement('div'); line.className = 'msg error'; line.textContent = `Storage error: ${reason} Retry; changes were not reported as saved.`; container.appendChild(line); }
 }
 function queueStorageWrite(work) {
   const result = storageWriteQueue.then(work, work);
@@ -590,9 +604,19 @@ let cancelRequested = false;
 let lastActivity = Date.now();
 let activePrompt = '';
 
-function setStatus(text) {
+function setStatus(text, { spinner = true } = {}) {
   const el = document.getElementById('status');
-  el.textContent = text;
+  el.replaceChildren();
+  if (text) {
+    if (spinner) {
+      const spin = document.createElement('span');
+      spin.className = 'spinner';
+      el.append(spin);
+    }
+    const label = document.createElement('span');
+    label.textContent = text;
+    el.append(label);
+  }
   el.hidden = !text;
   lastActivity = Date.now();
 }
@@ -921,7 +945,7 @@ async function callLLM() {
   abortController = new AbortController();
   const controller = abortController;
   let timedOut = false;
-  const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, 120000);
+  const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, 180000);
   const opts = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
@@ -935,13 +959,13 @@ async function callLLM() {
   catch (e) {
     clearTimeout(timeoutId);
     if (e.name === 'AbortError') {
-      addMessage('error', timedOut ? 'Request timed out after 2 min.' : 'Cancelled.');
+      addMessage('error', timedOut ? 'Request timed out after 3 min.' : 'Cancelled.');
       return null;
     }
     // transient network glitch — one retry
     try { await new Promise(r => setTimeout(r, 500)); response = await fetch(url, opts); }
     catch (e2) {
-      if (e2.name === 'AbortError') { addMessage('error', timedOut ? 'Request timed out after 2 min.' : 'Cancelled.'); return null; }
+      if (e2.name === 'AbortError') { addMessage('error', timedOut ? 'Request timed out after 3 min.' : 'Cancelled.'); return null; }
       addMessage('error', `Network error: ${e2.message}`); return null;
     }
   } finally { clearTimeout(timeoutId); }
