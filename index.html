@@ -200,11 +200,7 @@ body {
 .input-area button:disabled { opacity: 0.5; cursor: not-allowed; }
 .input-area button.stop { background: var(--danger); }
 .input-area button.stop:hover { background: #da3633; }
-.build-mode { display: flex; justify-content: center; align-items: center; gap: 12px; padding: 12px 12px 4px; flex-wrap: wrap; }
-.build-mode .btn-small { min-width: 132px; min-height: 52px; font-size: 16px; padding: 10px 16px; }
-.build-mode .btn-small.active { background: var(--accent); border-color: var(--accent); color: white; }
-.build-mode label { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
-.build-mode select { max-width: 180px; background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 6px; font: inherit; }
+.build-hint { padding: 12px 16px 4px; font-size: 13px; color: var(--text-muted); text-align: center; }
 #status {
   padding: 4px 12px;
   font-size: 11px;
@@ -349,11 +345,7 @@ body {
         <span id="storage-usage" style="font-size:11px;color:var(--text-muted)">Storage: loading…</span>
         <button class="btn-small" id="export-data-btn">Export data</button>
       </div>
-      <div class="build-mode" aria-label="Build mode">
-        <button class="btn-small active" id="new-tab-mode-btn" type="button" title="Describe what you want to have (a game, some music)">New tab</button>
-        <button class="btn-small" id="modify-tab-mode-btn" type="button">Modify tab</button>
-        <label id="modify-tab-picker" hidden>App <select id="modify-tab-select"></select></label>
-      </div>
+      <div class="build-hint">Describe a new tab to add, or a change to an existing one — e.g. "add a todo list tab" or "make the timer's background dark".</div>
       <div id="messages"></div>
       <div id="status" hidden></div>
       <div class="input-area">
@@ -598,9 +590,6 @@ let abortController = null;
 let cancelRequested = false;
 let lastActivity = Date.now();
 let activePrompt = '';
-let activeBuildInstruction = '';
-let buildMode = 'new';
-let modifyTabId = '';
 
 function setStatus(text) {
   const el = document.getElementById('status');
@@ -774,38 +763,6 @@ function saveSettings() {
 async function loadMessageCache() { messages = await loadMessages(); renderMessages(); }
 async function saveMessages() { await replaceMessages(messages); }
 
-function populateModifyTabSelect() {
-  const select = document.getElementById('modify-tab-select');
-  if (!select) return;
-  const selected = modifyTabId || select.value;
-  select.replaceChildren();
-  getTabs().forEach(tab => {
-    const option = document.createElement('option');
-    option.value = tab.id;
-    option.textContent = tab.label;
-    option.selected = tab.id === selected;
-    select.appendChild(option);
-  });
-  modifyTabId = select.value;
-  select.disabled = !select.options.length;
-}
-
-function setBuildMode(mode) {
-  buildMode = mode;
-  const isModify = mode === 'modify';
-  document.getElementById('new-tab-mode-btn').classList.toggle('active', !isModify);
-  document.getElementById('modify-tab-mode-btn').classList.toggle('active', isModify);
-  document.getElementById('modify-tab-picker').hidden = !isModify;
-  if (isModify) populateModifyTabSelect();
-  document.getElementById('chat-input').placeholder = isModify ? 'Describe the change…' : 'Describe what you want to have (a game, some music)';
-}
-
-function getBuildInstruction() {
-  if (buildMode === 'new') return 'Build a new tab:';
-  const tab = getTabs().find(item => item.id === modifyTabId);
-  return tab ? `Modify tab ${tab.label}:` : null;
-}
-
 // ── System prompt ────────────────────────────────────────────
 const SYSTEM_PROMPT = `You are the AI builder for Martin's Super Webapp — a mobile-first PWA. Your role is to create and modify tabs using the tools provided. Each tab is a self-contained HTML page displayed in an iframe.
 
@@ -923,7 +880,7 @@ const TOOLS = [
 
 function buildAPIMessages() {
   return [
-    { role: 'system', content: `${SYSTEM_PROMPT}\n\n${activeBuildInstruction}` },
+    { role: 'system', content: SYSTEM_PROMPT },
     ...messages.filter(m => m.role !== 'exec').map(m => {
       const msg = { role: m.role };
       if (m.tool_calls) { msg.content = null; msg.tool_calls = m.tool_calls; }
@@ -1103,11 +1060,10 @@ async function executeToolCall(tc) {
   }
 }
 
-async function processUserMessage(userText, buildInstruction) {
+async function processUserMessage(userText) {
   if (isProcessing) return;
   lockInput();
   activePrompt = userText;
-  activeBuildInstruction = buildInstruction;
 
   try {
     addMessage('user', userText);
@@ -1172,7 +1128,6 @@ async function processUserMessage(userText, buildInstruction) {
     addMessage('error', `Unexpected error: ${err.message}`);
   } finally {
     activePrompt = '';
-    activeBuildInstruction = '';
     unlockInput();
   }
 }
@@ -1201,7 +1156,6 @@ function renderNavTabs() {
     nav.insertBefore(btn, buildBtn);
   });
   buildBtn.classList.toggle('active', activeTab === 'build');
-  populateModifyTabSelect();
   // Rebuild panes for tabs that lost their DOM node (fresh document after cold resume).
   tabs.forEach(tab => {
     const existing = tabIframes[tab.id];
@@ -1640,9 +1594,6 @@ async function init() {
   };
 
   // Send / Stop
-  document.getElementById('new-tab-mode-btn').onclick = () => setBuildMode('new');
-  document.getElementById('modify-tab-mode-btn').onclick = () => setBuildMode('modify');
-  document.getElementById('modify-tab-select').onchange = function() { modifyTabId = this.value; };
   document.getElementById('send-btn').onclick = async function() {
     if (isProcessing) {
       cancelRequested = true;
@@ -1654,11 +1605,9 @@ async function init() {
     const text = input.value.trim();
     if (!text) return;
     if (!ensureUsername()) return;
-    const buildInstruction = getBuildInstruction();
-    if (!buildInstruction) { alert('Choose an installed app to modify.'); return; }
     input.value = '';
     input.style.height = '';
-    await processUserMessage(text, buildInstruction);
+    await processUserMessage(text);
   };
 
   document.getElementById('chat-input').onkeydown = e => {
