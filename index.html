@@ -343,7 +343,6 @@ body {
         <label>Model <input type="text" id="model-select" value="gpt-4o" style="width:130px"></label>
         <label>API URL <select id="api-url-input" style="width:190px"></select></label>
         <label id="api-url-custom-label" hidden>Custom URL <input type="text" id="api-url-custom-input" placeholder="https://api.example.com/v1" style="width:220px"></label>
-        <button class="btn-small" id="export-data-btn">Export data</button>
       </div>
       <div class="build-hint">Describe a new tab to add, or a change to an existing one — e.g. "add a todo list tab" or "make the timer's background dark".</div>
       <div id="messages"></div>
@@ -1567,14 +1566,6 @@ function renderMessages() {
 // ============================================================
 // 8. INIT & EVENT BINDING
 // ============================================================
-async function exportStorageData() {
-  try {
-    const payload = { exportedAt: new Date().toISOString(), tabs: await loadTabs(), history: await loadHistory(), messages: await loadMessages() };
-    const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }));
-    const link = document.createElement('a'); link.href = url; link.download = 'martin-superwebapp-export.json'; link.click(); URL.revokeObjectURL(url);
-  } catch (error) { storageError(error); }
-}
-
 async function init() {
   const sendButton = document.getElementById('send-btn');
   sendButton.disabled = true;
@@ -1646,8 +1637,6 @@ async function init() {
     document.getElementById('api-url-custom-label').hidden = this.value !== CUSTOM_URL_VALUE;
     saveSettings();
   };
-  document.getElementById('export-data-btn').onclick = exportStorageData;
-
   // Config management
   document.getElementById('config-select').onchange = function() {
     if (this.value) { loadConfig(this.value); }
