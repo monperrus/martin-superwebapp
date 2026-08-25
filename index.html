@@ -292,6 +292,9 @@ body {
   justify-content: space-between;
   flex-shrink: 0;
 }
+.history-filter { padding: 8px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.history-filter label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); }
+.history-filter select { flex: 1; }
 .modal-body { overflow-y: auto; flex: 1; padding: 10px; }
 .history-item {
   padding: 10px 12px;
@@ -387,6 +390,7 @@ body {
       <span>Version History</span>
       <button class="btn-small" onclick="closeHistoryModal()">✕</button>
     </div>
+    <div class="history-filter"><label>App <select id="history-filter-select"></select></label></div>
     <div class="modal-body" id="history-list"></div>
   </div>
 </div>
@@ -1505,14 +1509,41 @@ async function importSharedTab() {
 // ============================================================
 // 6. HISTORY
 // ============================================================
+let historyFilterTabId = '';
+
 function openHistoryModal() {
-  const history = getHistory();
+  populateHistoryFilter();
+  renderHistoryList();
+  document.getElementById('history-modal').classList.add('open');
+}
+
+function populateHistoryFilter() {
+  const select = document.getElementById('history-filter-select');
+  const apps = new Map();
+  getHistory().forEach(snap => { if (!apps.has(snap.tabId)) apps.set(snap.tabId, snap.tab.label); });
+  select.replaceChildren();
+  const allOption = document.createElement('option');
+  allOption.value = '';
+  allOption.textContent = 'All apps';
+  select.appendChild(allOption);
+  apps.forEach((label, tabId) => {
+    const option = document.createElement('option');
+    option.value = tabId;
+    option.textContent = `${label} (${tabId})`;
+    select.appendChild(option);
+  });
+  if (!apps.has(historyFilterTabId)) historyFilterTabId = '';
+  select.value = historyFilterTabId;
+}
+
+function renderHistoryList() {
+  const history = getHistory().filter(snap => !historyFilterTabId || snap.tabId === historyFilterTabId);
   const list = document.getElementById('history-list');
   list.innerHTML = '';
   if (!history.length) {
-    list.innerHTML = '<p class="history-empty">No history yet. History is saved on every tab change.</p>';
+    list.innerHTML = `<p class="history-empty">${historyFilterTabId ? 'No history for this app yet.' : 'No history yet. History is saved on every tab change.'}</p>`;
   } else {
-    history.forEach((snap, idx) => {
+    history.forEach(snap => {
       const item = document.createElement('div');
       item.className = 'history-item';
       const date = new Date(snap.timestamp).toLocaleString();
@@ -1545,7 +1576,7 @@ function openHistoryModal() {
       const restore = document.createElement('button');
       restore.className = 'btn-small';
       restore.textContent = 'Restore';
-      restore.onclick = () => restoreTabSnapshot(idx);
+      restore.onclick = () => restoreTabSnapshot(snap.historyId);
       const commit = document.createElement('button');
       commit.className = 'btn-small';
       commit.textContent = 'Commit';
@@ -1555,7 +1586,6 @@ function openHistoryModal() {
       list.appendChild(item);
     });
   }
-  document.getElementById('history-modal').classList.add('open');
 }
 
 function closeHistoryModal() {
@@ -1627,10 +1657,10 @@ async function commitHistorySnapshot(snapshot, button) {
   }
 }
 
-async function restoreTabSnapshot(idx) {
-  const history = getHistory();
-  if (!history[idx]) return;
-  const restoredTab = history[idx].tab;
+async function restoreTabSnapshot(historyId) {
+  const snap = getHistory().find(entry => entry.historyId === historyId);
+  if (!snap) return;
+  const restoredTab = snap.tab;
   const tabs = getTabs();
   const tabIndex = tabs.findIndex(tab => tab.id === restoredTab.id);
   const previousTab = tabIndex >= 0 ? tabs[tabIndex] : null;
@@ -1643,7 +1673,7 @@ async function restoreTabSnapshot(idx) {
   renderNavTabs();
   activateTab(restoredTab.id);
   closeHistoryModal();
-  const date = new Date(history[idx].timestamp).toLocaleString();
+  const date = new Date(snap.timestamp).toLocaleString();
   addMessage('system', `Restored "${restoredTab.label}" to its version from ${date}.`);
 }
 
@@ -1789,6 +1819,7 @@ async function init() {
 
   // History
   document.getElementById('history-btn').onclick = e => { e.stopPropagation(); openHistoryModal(); };
+  document.getElementById('history-filter-select').onchange = e => { historyFilterTabId = e.target.value; renderHistoryList(); };
 
   // Sharing
   document.getElementById('share-btn').onclick = openShareModal;
