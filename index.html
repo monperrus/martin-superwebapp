@@ -1295,9 +1295,9 @@ function base64Encode(value) {
   return btoa(binary);
 }
 
-function githubTabFileName(tabId) {
+function githubTabFolderName(tabId) {
   const id = tabId.trim();
-  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(id) ? `${id}.html` : `tab-${base64UrlEncode(tabId)}.html`;
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(id) ? id : `tab-${base64UrlEncode(tabId)}`;
 }
 
 function base64UrlDecode(value) {
@@ -1601,8 +1601,8 @@ async function commitHistorySnapshot(snapshot, button) {
   const tab = snapshot?.tab;
   if (!tab || typeof tab.id !== 'string' || typeof tab.html !== 'string') return;
   const appId = ensureInstallationId();
-  const fileName = githubTabFileName(tab.id);
-  const filePath = `${encodeURIComponent(appId)}/${encodeURIComponent(fileName)}`;
+  const folderName = githubTabFolderName(tab.id);
+  const filePath = `${encodeURIComponent(folderName)}/index.html`;
   const apiUrl = `https://api.github.com/repos/${GITHUB_APPS_OWNER}/${GITHUB_APPS_REPO}/contents/${filePath}`;
   const headers = {
     Accept: 'application/vnd.github+json',
@@ -1649,7 +1649,7 @@ async function commitHistorySnapshot(snapshot, button) {
     button.title = commitUrl ? 'Open commit on GitHub' : '';
     button.disabled = false;
     if (commitUrl) button.onclick = () => window.open(commitUrl, '_blank', 'noopener');
-    addMessage('system', `Committed "${tab.label || tab.id}" to ${GITHUB_APPS_OWNER}/${GITHUB_APPS_REPO}/${appId}/${fileName}.`);
+    addMessage('system', `Committed "${tab.label || tab.id}" to ${GITHUB_APPS_OWNER}/${GITHUB_APPS_REPO}/${filePath}.`);
   } catch (error) {
     button.disabled = false;
     button.textContent = originalText;
