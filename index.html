@@ -670,8 +670,11 @@ function randomItem(items) {
 }
 function suggestedUsername() { return `${randomItem(USERNAME_ADJECTIVES)}-${randomItem(USERNAME_ADJECTIVES)}-${randomItem(USERNAME_ANIMALS)}`; }
 function ensureInstallationId() {
-  if (localStorage.getItem(INSTALLATION_ID_KEY)) return;
-  localStorage.setItem(INSTALLATION_ID_KEY, crypto.randomUUID());
+  const existing = localStorage.getItem(INSTALLATION_ID_KEY)?.trim();
+  if (existing) return existing;
+  const installationId = crypto.randomUUID();
+  localStorage.setItem(INSTALLATION_ID_KEY, installationId);
+  return installationId;
 }
 function ensureUsername() {
   const existing = localStorage.getItem(USERNAME_KEY)?.trim();
@@ -1289,7 +1292,9 @@ function validSharedTabVersion(version) {
   return tab && typeof tab.id === 'string' && typeof tab.label === 'string' && typeof tab.html === 'string'
     && typeof version.currentHash === 'string'
     && (typeof version.previousHash === 'string' || version.previousHash === null)
-    && typeof version.prompt === 'string';
+    && typeof version.prompt === 'string'
+    && (version.publishedAt === undefined || typeof version.publishedAt === 'string')
+    && (version.appId === undefined || typeof version.appId === 'string');
 }
 
 function getSharedTabVersions(sharedDocument) {
@@ -1299,25 +1304,31 @@ function getSharedTabVersions(sharedDocument) {
     .sort(([a], [b]) => Number(a) - Number(b));
 }
 
-async function makeSharedTabVersion(tab, parentHash = undefined) {
+async function makeSharedTabVersion(tab, parentHash = undefined, appId = ensureInstallationId()) {
   const currentHash = await hashTabVersion(tab);
   const latestSnapshot = getHistory().find(snapshot => snapshot.tabId === tab.id && snapshot.currentHash === currentHash);
   return {
     tab: { id: tab.id, label: tab.label, html: tab.html },
     currentHash: latestSnapshot?.currentHash ?? currentHash,
     previousHash: parentHash ?? latestSnapshot?.previousHash ?? null,
-    prompt: latestSnapshot?.prompt ?? 'Published shared tab'
+    prompt: latestSnapshot?.prompt ?? 'Published shared tab',
+    publishedAt: new Date().toISOString(),
+    appId
   };
 }
 
-async function makeTabDocument(tab) { return { '1': await makeSharedTabVersion(tab) }; }
+async function makeTabDocument(tab) {
+  const appId = ensureInstallationId();
+  return { appId, '1': await makeSharedTabVersion(tab, undefined, appId) };
+}
 
 async function appendSharedTabVersion(sharedDocument, tab) {
   const versions = getSharedTabVersions(sharedDocument);
   if (!versions.length) throw new Error('The existing Gist does not contain a supported Super Webapp tab document.');
   const [latestVersion, latest] = versions.at(-1);
   const nextVersion = String(Number(latestVersion) + 1);
-  return { ...sharedDocument, [nextVersion]: await makeSharedTabVersion(tab, latest.currentHash) };
+  const appId = ensureInstallationId();
+  return { ...sharedDocument, appId, [nextVersion]: await makeSharedTabVersion(tab, latest.currentHash, appId) };
 }
 
 function gistServer(tab) {
