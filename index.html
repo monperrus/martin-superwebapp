@@ -306,6 +306,7 @@ body {
 .history-item .h-tabs { font-size: 12px; color: var(--text); }
 .history-item .h-prompt { font-size: 12px; color: var(--text-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
 .history-item .h-hash { font: 10px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-muted); }
+.history-item .h-actions { display: flex; gap: 6px; margin-top: 6px; align-items: center; }
 .history-empty { padding: 20px; text-align: center; color: var(--text-muted); font-size: 13px; }
 
 /* ── Tab sharing ───────────────────────────────────────────── */
@@ -403,10 +404,10 @@ body {
         <div class="share-actions">
           <button class="btn-small" id="publish-gist-btn">Publish public GitHub Gist</button>
         </div>
-        <label id="github-token-field">GitHub token (only needed to publish)
-          <input id="github-token-input" type="password" autocomplete="off" placeholder="Fine-grained token with Gists: read/write">
+        <label id="github-token-field">GitHub token (needed to share or commit)
+          <input id="github-token-input" type="password" autocomplete="off" placeholder="Token with Gists and repository Contents write access">
         </label>
-        <p class="share-note">The token is stored only in this browser to prefill future publishes. Publishing creates a public Gist and automatically generates the share link from its raw URL.</p>
+        <p class="share-note">The token is stored only in this browser to prefill future publishes and history commits. Sharing needs Gists: read/write; committing needs access to monperrus/mws_apps with Contents: read/write.</p>
         <div class="share-actions"><button class="btn-small" id="native-share-btn" hidden>Share</button></div>
         <div class="share-result" id="share-result">
           <label>Share link <input id="share-link-output" type="text" readonly></label>
@@ -428,6 +429,8 @@ const MSGS_KEY        = 'agent_messages';
 const MODEL_KEY       = 'agent_model';
 const API_URL_KEY     = 'agent_api_url';
 const GITHUB_TOKEN_KEY = 'github_token';
+const GITHUB_APPS_OWNER = 'monperrus';
+const GITHUB_APPS_REPO = 'mws_apps';
 const INSTALLATION_ID_KEY = 'msw_installation_id';
 const USERNAME_KEY = 'msw_username';
 const CONFIGS_KEY     = 'agent_configs';
@@ -1281,6 +1284,18 @@ function base64UrlEncode(value) {
   return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
 }
 
+function base64Encode(value) {
+  const bytes = new TextEncoder().encode(value);
+  let binary = '';
+  bytes.forEach(byte => { binary += String.fromCharCode(byte); });
+  return btoa(binary);
+}
+
+function githubTabFileName(tabId) {
+  const id = tabId.trim();
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(id) ? `${id}.html` : `tab-${base64UrlEncode(tabId)}.html`;
+}
+
 function base64UrlDecode(value) {
   const padded = value.replaceAll('-', '+').replaceAll('_', '/') + '='.repeat((4 - value.length % 4) % 4);
   const binary = atob(padded);
@@ -1385,7 +1400,6 @@ function openShareModal() {
   document.getElementById('publish-gist-btn').disabled = !tabs.length;
   const token = localStorage.getItem(GITHUB_TOKEN_KEY) || '';
   document.getElementById('github-token-input').value = token;
-  document.getElementById('github-token-field').hidden = !!token;
   document.getElementById('share-modal').classList.add('open');
 }
 
@@ -1397,7 +1411,6 @@ async function publishSelectedTabToGist() {
   if (!tab) { alert('Choose a tab to share.'); return; }
   if (!token) { alert('Enter a GitHub token with Gists read/write permission.'); return; }
   localStorage.setItem(GITHUB_TOKEN_KEY, token);
-  document.getElementById('github-token-field').hidden = true;
 
   const button = document.getElementById('publish-gist-btn');
   button.disabled = true;
@@ -1527,12 +1540,18 @@ function openHistoryModal() {
         hashes.textContent = `${snap.hashAlgorithm || 'SHA-256'}: ${snap.previousHash.slice(0, 12)} → ${snap.currentHash.slice(0, 12)}`;
         item.appendChild(hashes);
       }
+      const actions = document.createElement('div');
+      actions.className = 'h-actions';
       const restore = document.createElement('button');
       restore.className = 'btn-small';
-      restore.style.cssText = 'margin-top:6px;align-self:flex-start';
       restore.textContent = 'Restore';
       restore.onclick = () => restoreTabSnapshot(idx);
-      item.appendChild(restore);
+      const commit = document.createElement('button');
+      commit.className = 'btn-small';
+      commit.textContent = 'Commit';
+      commit.onclick = () => commitHistorySnapshot(snap, commit);
+      actions.append(restore, commit);
+      item.appendChild(actions);
       list.appendChild(item);
     });
   }
@@ -1541,6 +1560,71 @@ function openHistoryModal() {
 
 function closeHistoryModal() {
   document.getElementById('history-modal').classList.remove('open');
+}
+
+async function commitHistorySnapshot(snapshot, button) {
+  const token = localStorage.getItem(GITHUB_TOKEN_KEY)?.trim();
+  if (!token) {
+    alert(`Add a GitHub token in Share first. It needs Contents: read and write access to ${GITHUB_APPS_OWNER}/${GITHUB_APPS_REPO}.`);
+    return;
+  }
+  const tab = snapshot?.tab;
+  if (!tab || typeof tab.id !== 'string' || typeof tab.html !== 'string') return;
+  const appId = ensureInstallationId();
+  const fileName = githubTabFileName(tab.id);
+  const filePath = `${encodeURIComponent(appId)}/${encodeURIComponent(fileName)}`;
+  const apiUrl = `https://api.github.com/repos/${GITHUB_APPS_OWNER}/${GITHUB_APPS_REPO}/contents/${filePath}`;
+  const headers = {
+    Accept: 'application/vnd.github+json',
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json',
+    'X-GitHub-Api-Version': '2022-11-28'
+  };
+  const originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = 'Committing…';
+  try {
+    const existingResponse = await fetch(apiUrl, { headers, credentials: 'omit' });
+    let existingFile = null;
+    if (existingResponse.ok) existingFile = await existingResponse.json();
+    else if (existingResponse.status !== 404) {
+      const error = await existingResponse.json().catch(() => ({}));
+      throw new Error(error.message || `GitHub returned ${existingResponse.status}`);
+    }
+
+    const committedAt = new Date(snapshot.timestamp).toISOString();
+    const details = [
+      `History timestamp: ${committedAt}`,
+      snapshot.prompt ? `Prompt: ${snapshot.prompt}` : null,
+      snapshot.currentHash ? `${snapshot.hashAlgorithm || 'SHA-256'}: ${snapshot.currentHash}` : null,
+      `App-Id: ${appId}`
+    ].filter(Boolean).join('\n');
+    const body = {
+      message: `Commit ${tab.label || tab.id} (${tab.id}) from Super Webapp history\n\n${details}`,
+      content: base64Encode(tab.html),
+      ...(typeof existingFile?.sha === 'string' ? { sha: existingFile.sha } : {})
+    };
+    const commitResponse = await fetch(apiUrl, {
+      method: 'PUT', headers, credentials: 'omit', body: JSON.stringify(body)
+    });
+    const result = await commitResponse.json().catch(() => ({}));
+    if (!commitResponse.ok) {
+      if (commitResponse.status === 404) throw new Error(`${GITHUB_APPS_OWNER}/${GITHUB_APPS_REPO} was not found or this token cannot access it.`);
+      if (commitResponse.status === 401 || commitResponse.status === 403) throw new Error(`This token cannot write to ${GITHUB_APPS_OWNER}/${GITHUB_APPS_REPO}. Check its repository access and Contents permission.`);
+      throw new Error(result.message || `GitHub returned ${commitResponse.status}`);
+    }
+
+    const commitUrl = result.commit?.html_url;
+    button.textContent = 'Committed ✓';
+    button.title = commitUrl ? 'Open commit on GitHub' : '';
+    button.disabled = false;
+    if (commitUrl) button.onclick = () => window.open(commitUrl, '_blank', 'noopener');
+    addMessage('system', `Committed "${tab.label || tab.id}" to ${GITHUB_APPS_OWNER}/${GITHUB_APPS_REPO}/${appId}/${fileName}.`);
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = originalText;
+    alert(`Could not commit this version: ${error.message}`);
+  }
 }
 
 async function restoreTabSnapshot(idx) {
@@ -1713,7 +1797,6 @@ async function init() {
     const token = this.value.trim();
     if (token) localStorage.setItem(GITHUB_TOKEN_KEY, token);
     else localStorage.removeItem(GITHUB_TOKEN_KEY);
-    document.getElementById('github-token-field').hidden = !!token;
   };
   document.getElementById('copy-share-link-btn').onclick = async () => {
     const output = document.getElementById('share-link-output');
