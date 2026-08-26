@@ -360,6 +360,7 @@ body {
         <label>API Key <input type="password" id="api-key-input" placeholder="sk-..."></label>
         <label>Model <input type="text" id="model-select" value="gpt-4o" style="width:130px"></label>
         <label>API URL <select id="api-url-input" style="width:190px"></select></label>
+        <label>Timeout (min) <input type="number" id="timeout-input" min="1" max="60" step="1" value="3" style="width:48px"></label>
         <label id="api-url-custom-label" hidden>Custom URL <input type="text" id="api-url-custom-input" placeholder="https://api.example.com/v1" style="width:220px"></label>
       </div>
       <div class="build-hint">Describe a new tab to add, or a change to an existing one — e.g. "add a todo list tab" or "make the timer's background dark".</div>
@@ -432,6 +433,8 @@ const API_KEY_KEY     = 'agent_api_key';
 const MSGS_KEY        = 'agent_messages';
 const MODEL_KEY       = 'agent_model';
 const API_URL_KEY     = 'agent_api_url';
+const TIMEOUT_KEY     = 'agent_timeout';
+const DEFAULT_TIMEOUT_MIN = 3;
 const GITHUB_TOKEN_KEY = 'github_token';
 const GITHUB_APPS_OWNER = 'monperrus';
 const GITHUB_APPS_REPO = 'mws_apps';
@@ -722,6 +725,8 @@ function loadConfig(name) {
   localStorage.setItem(API_KEY_KEY, cfg.apiKey || '');
   localStorage.setItem(MODEL_KEY, cfg.model || 'gpt-4o');
   localStorage.setItem(API_URL_KEY, url);
+  localStorage.setItem(TIMEOUT_KEY, cfg.timeoutMin || DEFAULT_TIMEOUT_MIN);
+  document.getElementById('timeout-input').value = cfg.timeoutMin || DEFAULT_TIMEOUT_MIN;
   setActiveCfgName(name);
   return true;
 }
@@ -733,7 +738,8 @@ function saveCurrentAsConfig(name) {
   configs[name] = {
     apiKey: document.getElementById('api-key-input').value,
     model:  document.getElementById('model-select').value,
-    apiUrl: getApiUrl()
+    apiUrl: getApiUrl(),
+    timeoutMin: getTimeoutMin()
   };
   setConfigs(configs);
   setActiveCfgName(name);
@@ -780,6 +786,13 @@ function getApiUrl() {
   return urlSel.value;
 }
 
+// Current request timeout in minutes, clamped to [1, 60]; falls back to DEFAULT_TIMEOUT_MIN.
+function getTimeoutMin() {
+  const v = parseInt(document.getElementById('timeout-input').value, 10);
+  if (!Number.isFinite(v) || v < 1) return DEFAULT_TIMEOUT_MIN;
+  return Math.min(v, 60);
+}
+
 function loadSettings() {
   const urlSel = document.getElementById('api-url-input');
   urlSel.innerHTML = '';
@@ -801,6 +814,7 @@ function loadSettings() {
     document.getElementById('model-select').value  = localStorage.getItem(MODEL_KEY)   || 'gpt-4o';
     selectApiUrl(localStorage.getItem(API_URL_KEY) || INFERENCE_URLS[0]);
     document.getElementById('model-badge').textContent = localStorage.getItem(MODEL_KEY) || 'gpt-4o';
+    document.getElementById('timeout-input').value = localStorage.getItem(TIMEOUT_KEY) || DEFAULT_TIMEOUT_MIN;
   }
   populateConfigSelect();
 }
@@ -809,6 +823,7 @@ function saveSettings() {
   localStorage.setItem(API_KEY_KEY, document.getElementById('api-key-input').value);
   localStorage.setItem(MODEL_KEY,   document.getElementById('model-select').value);
   localStorage.setItem(API_URL_KEY, getApiUrl());
+  localStorage.setItem(TIMEOUT_KEY, getTimeoutMin());
   document.getElementById('model-badge').textContent = document.getElementById('model-select').value;
 }
 
@@ -955,7 +970,8 @@ async function callLLM() {
   abortController = new AbortController();
   const controller = abortController;
   let timedOut = false;
-  const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, 180000);
+  const timeoutMs = getTimeoutMin() * 60000;
+  const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
   const opts = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
@@ -969,13 +985,13 @@ async function callLLM() {
   catch (e) {
     clearTimeout(timeoutId);
     if (e.name === 'AbortError') {
-      addMessage('error', timedOut ? 'Request timed out after 3 min.' : 'Cancelled.');
+      addMessage('error', timedOut ? `Request timed out after ${getTimeoutMin()} min.` : 'Cancelled.');
       return null;
     }
     // transient network glitch — one retry
     try { await new Promise(r => setTimeout(r, 500)); response = await fetch(url, opts); }
     catch (e2) {
-      if (e2.name === 'AbortError') { addMessage('error', timedOut ? 'Request timed out after 3 min.' : 'Cancelled.'); return null; }
+      if (e2.name === 'AbortError') { addMessage('error', timedOut ? `Request timed out after ${getTimeoutMin()} min.` : 'Cancelled.'); return null; }
       addMessage('error', `Network error: ${e2.message}`); return null;
     }
   } finally { clearTimeout(timeoutId); }
@@ -1779,7 +1795,7 @@ async function init() {
   };
 
   // Settings auto-save
-  ['api-key-input','model-select','api-url-custom-input'].forEach(id => {
+  ['api-key-input','model-select','api-url-custom-input','timeout-input'].forEach(id => {
     document.getElementById(id).onchange = saveSettings;
   });
   document.getElementById('api-url-input').onchange = function() {
@@ -1794,6 +1810,7 @@ async function init() {
       document.getElementById('model-select').value  = localStorage.getItem(MODEL_KEY)   || 'gpt-4o';
       selectApiUrl(localStorage.getItem(API_URL_KEY) || INFERENCE_URLS[0]);
       document.getElementById('model-badge').textContent = localStorage.getItem(MODEL_KEY) || 'gpt-4o';
+      document.getElementById('timeout-input').value = localStorage.getItem(TIMEOUT_KEY) || DEFAULT_TIMEOUT_MIN;
       setActiveCfgName('');
     }
   };
