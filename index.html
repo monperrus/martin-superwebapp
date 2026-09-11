@@ -319,7 +319,11 @@ body {
   width: 100%; background: var(--code-bg); border: 1px solid var(--border);
   border-radius: 6px; color: var(--text); padding: 9px; font: inherit; font-size: 13px;
 }
-.share-form input:focus, .share-form select:focus { outline: none; border-color: var(--accent); }
+.share-form textarea {
+  width: 100%; min-height: 220px; resize: vertical; background: var(--code-bg); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text); padding: 9px; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.share-form input:focus, .share-form select:focus, .share-form textarea:focus { outline: none; border-color: var(--accent); }
 .share-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .share-actions .btn-small { min-height: 36px; font-size: 12px; }
 .share-note { color: var(--text-muted); font-size: 12px; line-height: 1.45; }
@@ -349,6 +353,7 @@ body {
         <div style="display:flex;gap:6px;margin-left:auto" onclick="event.stopPropagation()">
           <button class="btn-small" id="share-btn">Share</button>
           <button class="btn-small" id="import-btn">Import</button>
+          <button class="btn-small" id="paste-btn">Paste</button>
           <button class="btn-small" id="history-btn">History</button>
           <button class="btn-small" id="clear-chat-btn">Clear</button>
         </div>
@@ -394,6 +399,26 @@ body {
     </div>
     <div class="history-filter"><label>App <select id="history-filter-select"></select></label></div>
     <div class="modal-body" id="history-list"></div>
+  </div>
+</div>
+
+<!-- Paste a complete tab bottom sheet -->
+<div class="modal-overlay" id="paste-modal" onclick="closePasteModal()">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span>Replace a tab</span>
+      <button class="btn-small" onclick="closePasteModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="share-form">
+        <label>Tab <select id="paste-tab-select"></select></label>
+        <label>Complete HTML
+          <textarea id="paste-html-input" spellcheck="false" placeholder="<!DOCTYPE html>…"></textarea>
+        </label>
+        <p class="share-note">This replaces the selected tab’s full source and creates a version-history entry. Pasted code is sandboxed.</p>
+        <div class="share-actions"><button class="btn-small" id="replace-pasted-tab-btn">Replace tab</button></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1468,6 +1493,41 @@ function setImportStatus(text, error = false) {
   status.textContent = text || '';
   status.style.color = error ? 'var(--danger)' : '';
 }
+function openPasteModal() {
+  const select = document.getElementById('paste-tab-select');
+  const currentTabs = getTabs();
+  select.replaceChildren();
+  currentTabs.forEach(tab => {
+    const option = document.createElement('option');
+    option.value = tab.id; option.textContent = `${tab.label} (${tab.id})`; option.selected = tab.id === activeTab;
+    select.appendChild(option);
+  });
+  document.getElementById('paste-html-input').value = '';
+  document.getElementById('replace-pasted-tab-btn').disabled = !currentTabs.length;
+  document.getElementById('paste-modal').classList.add('open');
+  if (currentTabs.length) document.getElementById('paste-html-input').focus();
+}
+function closePasteModal() { document.getElementById('paste-modal').classList.remove('open'); }
+async function replaceTabFromPaste() {
+  const id = document.getElementById('paste-tab-select').value;
+  const html = document.getElementById('paste-html-input').value.trim();
+  const currentTabs = getTabs(); const index = currentTabs.findIndex(tab => tab.id === id);
+  if (index < 0) { alert('Choose a tab to replace.'); return; }
+  if (!html || !/<html[\s>]/i.test(html)) { alert('Paste a complete HTML document.'); return; }
+  const previousTab = currentTabs[index];
+  const replacement = { id: previousTab.id, label: previousTab.label, html, shared: true, ...(previousTab.server ? { server: previousTab.server } : {}) };
+  const button = document.getElementById('replace-pasted-tab-btn'); button.disabled = true;
+  try {
+    currentTabs[index] = replacement;
+    await commitTabMutation(currentTabs, replacement, 'Replaced by pasted HTML', previousTab, replacement);
+    renderNavTabs();
+    const iframe = tabIframes[id];
+    if (iframe) { iframe.setAttribute('sandbox', 'allow-scripts allow-forms allow-modals'); iframe.removeAttribute('src'); iframe.srcdoc = replacement.html; }
+    activateTab(id); closePasteModal();
+    addMessage('system', `Replaced "${replacement.label}" with pasted HTML.`);
+  } catch (error) { storageError(error); }
+  finally { button.disabled = false; }
+}
 function resetImportPreview() {
   pendingImport = null;
   document.getElementById('import-preview').classList.remove('visible');
@@ -2252,6 +2312,8 @@ async function init() {
   // Sharing
   document.getElementById('share-btn').onclick = openShareModal;
   document.getElementById('import-btn').onclick = openImportModal;
+  document.getElementById('paste-btn').onclick = openPasteModal;
+  document.getElementById('replace-pasted-tab-btn').onclick = replaceTabFromPaste;
   document.getElementById('inspect-import-btn').onclick = inspectPwaUrl;
   document.getElementById('cancel-import-btn').onclick = () => importController?.abort();
   document.getElementById('confirm-import-btn').onclick = importPwaSnapshot;
