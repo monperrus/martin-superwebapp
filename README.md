@@ -2,7 +2,7 @@
 
 A mobile-first PWA that you build with itself — use the Build tab to add tabs, menus, and features powered by AI.
 
-Use **Paste** in the Build header to replace an existing tab with a complete pasted HTML document. The replacement is saved in Version History and runs sandboxed.
+Use **Paste** in the Build header to replace an existing tab with a complete pasted HTML document. The replacement is saved in Version History and runs sandboxed. For code you control, **Trust this pasted app** grants same-origin storage access; trusted code can read Superapp settings, including saved API keys and GitHub tokens.
 
 **Live demo:** https://monperrus.github.io/martin-superwebapp/
 
