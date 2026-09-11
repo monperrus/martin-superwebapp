@@ -8,6 +8,12 @@ A mobile-first PWA that you build with itself — use the Build tab to add tabs,
 
 Ships with a web app manifest and service worker, so it can be installed as a Progressive Web App and reopened offline after the core assets have been cached once.
 
+## Import a PWA
+
+Use **Import** in the Build header to inspect and snapshot a public HTTPS PWA URL as an editable tab. The importer captures the entry HTML and its CORS-readable, same-origin static resources (scripts, styles, images, fonts, media, and static module dependencies), then serves the snapshot offline through this app's service worker. The imported code is sandboxed and cannot access this app's local storage, API key, GitHub token, or DOM.
+
+The source site must allow browser CORS requests. Server-side code, authenticated data, dynamic resource URLs, and the source app's existing browser storage cannot be copied; skipped or remote dependencies are reported before import. Imported snapshots can be edited through Build's tab-file tools and restored through Version History.
+
 ## Share a tab
 
 Use the **Share** button in the bottom navigation to publish the selected tab as a public GitHub Gist, then copy or use the native share sheet for the generated link. Publishing needs a GitHub fine-grained personal access token with **Gists: read and write** permission. The token is stored only in the browser's local storage so the field can be prefilled for future publishes.

@@ -348,6 +348,7 @@ body {
         <span class="badge" id="model-badge">agent</span>
         <div style="display:flex;gap:6px;margin-left:auto" onclick="event.stopPropagation()">
           <button class="btn-small" id="share-btn">Share</button>
+          <button class="btn-small" id="import-btn">Import</button>
           <button class="btn-small" id="history-btn">History</button>
           <button class="btn-small" id="clear-chat-btn">Clear</button>
         </div>
@@ -393,6 +394,33 @@ body {
     </div>
     <div class="history-filter"><label>App <select id="history-filter-select"></select></label></div>
     <div class="modal-body" id="history-list"></div>
+  </div>
+</div>
+
+<!-- PWA import bottom sheet -->
+<div class="modal-overlay" id="import-modal" onclick="closeImportModal()">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span>Import a PWA</span>
+      <button class="btn-small" onclick="closeImportModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="share-form">
+        <label>Public HTTPS URL
+          <input id="import-url-input" type="url" inputmode="url" autocomplete="url" placeholder="https://example.com/app/">
+        </label>
+        <p class="share-note">Imports an editable offline snapshot of the page and its CORS-readable static files. The source app runs sandboxed and cannot access this app’s settings or tokens.</p>
+        <div class="share-actions">
+          <button class="btn-small" id="inspect-import-btn">Inspect</button>
+          <button class="btn-small danger" id="cancel-import-btn" hidden>Cancel</button>
+        </div>
+        <div class="share-note" id="import-status" hidden></div>
+        <div class="share-result" id="import-preview">
+          <label>Snapshot <input id="import-preview-output" type="text" readonly></label>
+          <div class="share-actions"><button class="btn-small" id="confirm-import-btn">Import snapshot</button></div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -443,6 +471,9 @@ const USERNAME_KEY = 'msw_username';
 const CONFIGS_KEY     = 'agent_configs';
 const ACTIVE_CFG_KEY  = 'agent_active_config';
 const MAX_HISTORY     = 50;
+const MAX_IMPORT_FILES = 100;
+const MAX_IMPORT_BYTES = 8 * 1024 * 1024;
+const MAX_IMPORT_FILE_BYTES = 1024 * 1024;
 const SHARE_PARAM     = 'tab';
 const DB_NAME = 'martin-superwebapp';
 const DB_VERSION = 1;
@@ -452,6 +483,8 @@ let historyEntries = [];
 let storageWriteQueue = Promise.resolve();
 let storageChannel = null;
 let persistenceRequested = false;
+let importController = null;
+let pendingImport = null;
 
 const clone = value => value === undefined ? undefined : structuredClone(value);
 function requestResult(request) {
@@ -574,6 +607,46 @@ async function hashTabVersion(tab) {
   const bytes = new TextEncoder().encode(JSON.stringify(tab ?? null));
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function isBundledTab(tab) { return !!(tab?.project && typeof tab.project.projectId === 'string' && typeof tab.project.entryPath === 'string'); }
+function bundledTabSize(tab) {
+  if (!isBundledTab(tab)) return (tab?.html || '').length;
+  return (tab.html || '').length + Object.values(tab.project.files || {}).reduce((total, file) => total + (file?.size || 0), 0);
+}
+function normalizeProjectPath(value) {
+  if (typeof value !== 'string') return null;
+  const path = value.replaceAll('\\', '/').replace(/^\/+/, '');
+  if (!path || path.includes('\0') || path.split('/').some(part => !part || part === '.' || part === '..')) return null;
+  return path;
+}
+function projectEntryUrl(tab) {
+  const path = encodeURIComponent(tab.project.entryPath).replaceAll('%2F', '/');
+  return new URL(`./__pwa__/${encodeURIComponent(tab.project.projectId)}/${path}`, location.href).href;
+}
+function bytesToBase64(bytes) {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  return btoa(binary);
+}
+function base64ToBytes(value) {
+  const binary = atob(value);
+  return Uint8Array.from(binary, char => char.charCodeAt(0));
+}
+function isTextMimeType(type) {
+  return /^text\//i.test(type || '') || /(?:json|javascript|ecmascript|xml|svg|wasm-text)/i.test(type || '');
+}
+async function hashBytes(bytes) {
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+async function makeBundledFile(content, type) {
+  const bytes = new TextEncoder().encode(content);
+  return { base64: bytesToBase64(bytes), type: type || 'text/plain;charset=utf-8', size: bytes.byteLength, hash: await hashBytes(bytes) };
+}
+function bundledFileMetadata(file) {
+  return { type: file.type, size: file.size, hash: file.hash, text: isTextMimeType(file.type) };
 }
 
 
@@ -838,6 +911,10 @@ const SYSTEM_PROMPT = `You are the AI builder for Martin's Super Webapp — a mo
 - get_tab(id) — read a tab's full HTML before editing it
 - set_tab(id, label, html) — create or replace a tab. The saved version is paired with the user's latest prompt (user can roll back that tab via History). id: short kebab-case slug. label: ≤8 chars for the nav bar.
 - delete_tab(id) — remove a tab permanently
+- list_tab_files(tab_id) — list extra files in an imported PWA snapshot
+- get_tab_file(tab_id, path) — read an editable text file from an imported PWA snapshot
+- set_tab_file(tab_id, path, content, mime_type) — create or replace an editable text file in an imported PWA snapshot
+- delete_tab_file(tab_id, path) — remove a non-entry file from an imported PWA snapshot
 
 ## Library search
 Before using any external library, call search_libraries("name") to get the exact CDN URL and version. Then add a <script src="..."> or <link rel="stylesheet" href="..."> in the tab's <head>. Never guess CDN URLs.
@@ -860,6 +937,8 @@ Every tab must be a complete HTML document:
 <body>...</body>
 </html>
 \`\`\`
+
+Imported PWAs can contain extra HTML, CSS, and JavaScript files. Call list_tab_files before editing one, preserve relative paths, and use set_tab_file rather than embedding file contents into index.html.
 
 Mobile-first rules (the app is primarily used on a phone):
 - Minimum tap target: 44px tall
@@ -889,13 +968,33 @@ const _browserGlobals = Object.getOwnPropertyNames(window)
 const TOOLS = [
   { type: "function", function: {
     name: "list_tabs",
-    description: "List all current tabs (id, label, html size in bytes).",
+    description: "List all current tabs (id, label, total size in bytes, and bundled-file metadata when present).",
     parameters: { type: "object", properties: {} }
   }},
   { type: "function", function: {
     name: "get_tab",
     description: "Get the full HTML content of a tab by id. Call this before editing an existing tab.",
     parameters: { type: "object", properties: { id: { type: "string", description: "Tab id." } }, required: ["id"] }
+  }},
+  { type: "function", function: {
+    name: "list_tab_files",
+    description: "List extra files in an imported PWA snapshot.",
+    parameters: { type: "object", properties: { tab_id: { type: "string" } }, required: ["tab_id"] }
+  }},
+  { type: "function", function: {
+    name: "get_tab_file",
+    description: "Read one UTF-8 text file from an imported PWA snapshot. Binary files return metadata only.",
+    parameters: { type: "object", properties: { tab_id: { type: "string" }, path: { type: "string" } }, required: ["tab_id", "path"] }
+  }},
+  { type: "function", function: {
+    name: "set_tab_file",
+    description: "Create or replace one UTF-8 text file in an imported PWA snapshot. This creates a history version.",
+    parameters: { type: "object", properties: { tab_id: { type: "string" }, path: { type: "string" }, content: { type: "string" }, mime_type: { type: "string" } }, required: ["tab_id", "path", "content", "mime_type"] }
+  }},
+  { type: "function", function: {
+    name: "delete_tab_file",
+    description: "Delete a non-entry file from an imported PWA snapshot. This creates a history version.",
+    parameters: { type: "object", properties: { tab_id: { type: "string" }, path: { type: "string" } }, required: ["tab_id", "path"] }
   }},
   { type: "function", function: {
     name: "set_tab",
@@ -1018,13 +1117,63 @@ async function executeToolCall(tc) {
 
       case 'list_tabs': {
         const tabs = getTabs();
-        result = { tabs: tabs.map(t => ({ id: t.id, label: t.label, size: (t.html || '').length })) };
+        result = { tabs: tabs.map(t => ({ id: t.id, label: t.label, size: bundledTabSize(t), files: isBundledTab(t) ? Object.keys(t.project.files || {}).length + 1 : 1 })) };
         break;
       }
 
       case 'get_tab': {
         const tab = getTabs().find(t => t.id === params.id);
-        result = tab ? { id: tab.id, label: tab.label, html: tab.html } : { error: `Tab not found: ${params.id}` };
+        result = tab ? { id: tab.id, label: tab.label, html: tab.html, project: isBundledTab(tab) ? { entryPath: tab.project.entryPath, sourceUrl: tab.project.sourceUrl, files: Object.fromEntries(Object.entries(tab.project.files || {}).map(([path, file]) => [path, bundledFileMetadata(file)])) } : undefined } : { error: `Tab not found: ${params.id}` };
+        break;
+      }
+
+      case 'list_tab_files': {
+        const tab = getTabs().find(t => t.id === params.tab_id);
+        if (!tab) { result = { error: `Tab not found: ${params.tab_id}` }; break; }
+        if (!isBundledTab(tab)) { result = { error: 'This tab is a single HTML document, not an imported PWA snapshot.' }; break; }
+        result = { entryPath: tab.project.entryPath, files: Object.entries(tab.project.files || {}).map(([path, file]) => ({ path, ...bundledFileMetadata(file) })) };
+        break;
+      }
+
+      case 'get_tab_file': {
+        const tab = getTabs().find(t => t.id === params.tab_id);
+        const path = normalizeProjectPath(params.path);
+        if (!tab) { result = { error: `Tab not found: ${params.tab_id}` }; break; }
+        if (!isBundledTab(tab) || !path) { result = { error: 'Choose a valid file in an imported PWA snapshot.' }; break; }
+        if (path === tab.project.entryPath) { result = { path, type: 'text/html;charset=utf-8', content: tab.html }; break; }
+        const file = tab.project.files?.[path];
+        if (!file) { result = { error: `File not found: ${path}` }; break; }
+        result = isTextMimeType(file.type) ? { path, type: file.type, content: new TextDecoder().decode(base64ToBytes(file.base64)), hash: file.hash } : { path, ...bundledFileMetadata(file) };
+        break;
+      }
+
+      case 'set_tab_file': {
+        const tabs = getTabs(); const index = tabs.findIndex(t => t.id === params.tab_id); const path = normalizeProjectPath(params.path);
+        if (index < 0) { result = { error: `Tab not found: ${params.tab_id}` }; break; }
+        const tab = tabs[index];
+        if (!isBundledTab(tab) || !path || typeof params.content !== 'string' || !isTextMimeType(params.mime_type)) { result = { error: 'A valid imported PWA text file, content, and text MIME type are required.' }; break; }
+        const previousTab = tab;
+        const updatedTab = clone(tab);
+        if (path === updatedTab.project.entryPath) updatedTab.html = params.content;
+        else updatedTab.project.files[path] = await makeBundledFile(params.content, params.mime_type);
+        tabs[index] = updatedTab;
+        await commitTabMutation(tabs, updatedTab, activePrompt, previousTab, updatedTab);
+        renderNavTabs();
+        if (tabIframes[updatedTab.id]) tabIframes[updatedTab.id].src = projectEntryUrl(updatedTab);
+        result = { success: true, tab_id: updatedTab.id, path };
+        break;
+      }
+
+      case 'delete_tab_file': {
+        const tabs = getTabs(); const index = tabs.findIndex(t => t.id === params.tab_id); const path = normalizeProjectPath(params.path);
+        if (index < 0) { result = { error: `Tab not found: ${params.tab_id}` }; break; }
+        const tab = tabs[index];
+        if (!isBundledTab(tab) || !path || path === tab.project.entryPath || !tab.project.files?.[path]) { result = { error: 'Only an existing non-entry imported PWA file can be deleted.' }; break; }
+        const updatedTab = clone(tab); delete updatedTab.project.files[path]; tabs[index] = updatedTab;
+        await commitTabMutation(tabs, updatedTab, activePrompt, tab, updatedTab);
+        renderNavTabs();
+        if (tabIframes[updatedTab.id]) tabIframes[updatedTab.id].src = projectEntryUrl(updatedTab);
+        result = { success: true, tab_id: updatedTab.id, path };
         break;
       }
 
@@ -1041,7 +1190,8 @@ async function executeToolCall(tc) {
         if (existingIframe) {
           if (savedTab.shared) existingIframe.setAttribute('sandbox', 'allow-scripts allow-forms allow-modals');
           else existingIframe.removeAttribute('sandbox');
-          existingIframe.srcdoc = params.html;
+          if (isBundledTab(savedTab)) { existingIframe.removeAttribute('srcdoc'); existingIframe.src = projectEntryUrl(savedTab); }
+          else existingIframe.srcdoc = params.html;
         }
         result = { success: true, id: params.id, label: params.label, action: idx >= 0 ? 'updated' : 'created' };
         break;
@@ -1067,7 +1217,8 @@ async function executeToolCall(tc) {
         if (existingIframe) {
           if (updatedTab.shared) existingIframe.setAttribute('sandbox', 'allow-scripts allow-forms allow-modals');
           else existingIframe.removeAttribute('sandbox');
-          existingIframe.srcdoc = updatedTab.html;
+          if (isBundledTab(updatedTab)) { existingIframe.removeAttribute('srcdoc'); existingIframe.src = projectEntryUrl(updatedTab); }
+          else existingIframe.srcdoc = updatedTab.html;
         }
         result = { success: true, id: updatedTab.id, label: updatedTab.label, action: 'updated' };
         break;
@@ -1228,7 +1379,10 @@ function renderNavTabs() {
   tabs.forEach(tab => {
     const existing = tabIframes[tab.id];
     if (existing) {
-      if (existing.srcdoc !== tab.html) existing.srcdoc = tab.html;
+      if (isBundledTab(tab)) {
+        const src = projectEntryUrl(tab);
+        if (existing.src !== src) { existing.removeAttribute('srcdoc'); existing.src = src; }
+      } else if (existing.srcdoc !== tab.html) existing.srcdoc = tab.html;
       if (tab.shared) existing.setAttribute('sandbox', 'allow-scripts allow-forms allow-modals'); else existing.removeAttribute('sandbox');
       return;
     }
@@ -1240,7 +1394,7 @@ function renderNavTabs() {
     // Shared documents are arbitrary third-party HTML. Keep them isolated from
     // this app's localStorage (which can include API keys) and parent document.
     if (tab.shared) iframe.setAttribute('sandbox', 'allow-scripts allow-forms allow-modals');
-    iframe.srcdoc = tab.html;
+    if (isBundledTab(tab)) iframe.src = projectEntryUrl(tab); else iframe.srcdoc = tab.html;
     pane.appendChild(iframe);
     document.getElementById('tab-content').appendChild(pane);
     tabIframes[tab.id] = iframe;
@@ -1281,7 +1435,7 @@ function activateTab(id) {
       pane.id = `pane-${id}`;
       const iframe = document.createElement('iframe');
       if (tab.shared) iframe.setAttribute('sandbox', 'allow-scripts allow-forms allow-modals');
-      iframe.srcdoc = tab.html;
+      if (isBundledTab(tab)) iframe.src = projectEntryUrl(tab); else iframe.srcdoc = tab.html;
       pane.appendChild(iframe);
       document.getElementById('tab-content').appendChild(pane);
       tabIframes[id] = iframe;
@@ -1297,6 +1451,212 @@ function activateTab(id) {
 // ============================================================
 // 5. TAB SHARING
 // ============================================================
+function setImportStatus(text, error = false) {
+  const status = document.getElementById('import-status');
+  status.hidden = !text;
+  status.textContent = text || '';
+  status.style.color = error ? 'var(--danger)' : '';
+}
+function resetImportPreview() {
+  pendingImport = null;
+  document.getElementById('import-preview').classList.remove('visible');
+  document.getElementById('import-preview-output').value = '';
+}
+function openImportModal() {
+  resetImportPreview(); setImportStatus('');
+  document.getElementById('import-modal').classList.add('open');
+  document.getElementById('import-url-input').focus();
+}
+function closeImportModal() {
+  importController?.abort(); importController = null;
+  document.getElementById('import-modal').classList.remove('open');
+}
+function mimeType(response, fallback = 'application/octet-stream') {
+  return (response.headers.get('content-type') || fallback).split(';')[0].trim().toLowerCase();
+}
+function importedTabId(label) {
+  const root = (label || 'imported-app').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'imported-app';
+  const ids = new Set(getTabs().map(tab => tab.id));
+  let id = root, suffix = 2;
+  while (ids.has(id)) id = `${root.slice(0, 28)}-${suffix++}`;
+  return id;
+}
+function importedLabel(value) {
+  const label = (value || 'Imported').trim().replace(/\s+/g, ' ');
+  return Array.from(label).slice(0, 8).join('') || 'Imported';
+}
+function importPathForUrl(url, usedPaths) {
+  const rawSegments = url.pathname.split('/').filter(Boolean).map(segment => segment.replace(/[^A-Za-z0-9._-]/g, '_'));
+  let path = `assets/${rawSegments.join('/') || 'index'}`;
+  if (url.search) path += `-${awaitableUrlHash(url.href)}`;
+  const dot = path.lastIndexOf('/');
+  const stem = dot >= 0 ? path.slice(0, dot + 1) : '';
+  const name = dot >= 0 ? path.slice(dot + 1) : path;
+  let candidate = path, suffix = 2;
+  while (usedPaths.has(candidate)) candidate = `${stem}${name}-${suffix++}`;
+  usedPaths.add(candidate);
+  return candidate;
+}
+function awaitableUrlHash(value) {
+  let hash = 2166136261;
+  for (const char of value) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+  return (hash >>> 0).toString(36);
+}
+function relativeProjectUrl(fromPath, toPath) {
+  const from = fromPath.split('/').slice(0, -1);
+  const target = toPath.split('/');
+  while (from.length && target.length && from[0] === target[0]) { from.shift(); target.shift(); }
+  return [...from.map(() => '..'), ...target].join('/') || './';
+}
+function sourceUrl(value, baseUrl) {
+  if (!value || value.startsWith('#') || /^(?:data:|javascript:|mailto:|tel:|blob:)/i.test(value.trim())) return null;
+  try { const url = new URL(value, baseUrl); return url.protocol === 'https:' ? url : null; } catch { return null; }
+}
+function extractCssUrls(text, baseUrl) {
+  const urls = [];
+  text.replace(/(?:@import\s+(?:url\()?|url\()\s*["']?([^"'()\s;]+)["']?/gi, (_, value) => { const url = sourceUrl(value, baseUrl); if (url) urls.push(url); return _; });
+  return urls;
+}
+function extractJavaScriptUrls(text, baseUrl) {
+  const urls = [];
+  text.replace(/(?:import|export)\s+(?:[^"']*?\sfrom\s+)?["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)|new\s+(?:Shared)?Worker\(\s*["']([^"']+)["']|serviceWorker\.register\(\s*["']([^"']+)["']/g, (_, a, b, c, d) => { const url = sourceUrl(a || b || c || d, baseUrl); if (url) urls.push(url); return _; });
+  return urls;
+}
+function documentResourceUrls(doc, baseUrl) {
+  const refs = [];
+  const add = value => { const url = sourceUrl(value, baseUrl); if (url) refs.push(url); };
+  doc.querySelectorAll('script[src],img[src],audio[src],video[src],source[src],track[src],iframe[src],embed[src],object[data],link[href]').forEach(element => {
+    if (element.matches('link') && !/(?:stylesheet|icon|modulepreload|preload)/i.test(element.rel || '')) return;
+    add(element.getAttribute(element.matches('object') ? 'data' : 'src') || element.getAttribute('href'));
+  });
+  doc.querySelectorAll('[srcset]').forEach(element => element.getAttribute('srcset').split(',').forEach(part => add(part.trim().split(/\s+/)[0])));
+  return refs;
+}
+function rewriteReference(value, baseUrl, fromPath, resources) {
+  const url = sourceUrl(value, baseUrl);
+  if (!url) return value;
+  const resource = resources.get(url.href);
+  return resource ? relativeProjectUrl(fromPath, resource.path) : url.href;
+}
+function rewriteCss(text, baseUrl, fromPath, resources) {
+  return text.replace(/(url\(\s*["']?)([^"'()\s;]+)(["']?\s*\))/gi, (_, prefix, value, suffix) => `${prefix}${rewriteReference(value, baseUrl, fromPath, resources)}${suffix}`)
+    .replace(/(@import\s+(?:url\(\s*)?["'])([^"']+)(["'])/gi, (_, prefix, value, suffix) => `${prefix}${rewriteReference(value, baseUrl, fromPath, resources)}${suffix}`);
+}
+function rewriteJavaScript(text, baseUrl, fromPath, resources) {
+  return text.replace(/((?:import|export)\s+(?:[^"']*?\sfrom\s+)?["']|import\(\s*["']|new\s+(?:Shared)?Worker\(\s*["'])([^"']+)(["'])/g, (_, prefix, value, suffix) => `${prefix}${rewriteReference(value, baseUrl, fromPath, resources)}${suffix}`);
+}
+function rewriteDocument(doc, baseUrl, resources) {
+  const attrs = [['script', 'src'], ['img', 'src'], ['audio', 'src'], ['video', 'src'], ['source', 'src'], ['track', 'src'], ['iframe', 'src'], ['embed', 'src'], ['object', 'data']];
+  attrs.forEach(([selector, attribute]) => doc.querySelectorAll(`${selector}[${attribute}]`).forEach(element => element.setAttribute(attribute, rewriteReference(element.getAttribute(attribute), baseUrl, 'index.html', resources))));
+  doc.querySelectorAll('link[href]').forEach(element => {
+    if (/(?:stylesheet|icon|modulepreload|preload)/i.test(element.rel || '')) element.setAttribute('href', rewriteReference(element.getAttribute('href'), baseUrl, 'index.html', resources));
+    if (/\bmanifest\b/i.test(element.rel || '')) element.remove();
+  });
+  doc.querySelectorAll('[srcset]').forEach(element => {
+    element.setAttribute('srcset', element.getAttribute('srcset').split(',').map(part => {
+      const [value, ...descriptor] = part.trim().split(/\s+/);
+      return [rewriteReference(value, baseUrl, 'index.html', resources), ...descriptor].join(' ');
+    }).join(', '));
+  });
+  const marker = doc.createElement('meta'); marker.name = 'martin-superwebapp-source'; marker.content = baseUrl;
+  (doc.head || doc.documentElement).appendChild(marker);
+  return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
+}
+async function inspectPwaUrl() {
+  resetImportPreview();
+  const input = document.getElementById('import-url-input');
+  let entryUrl;
+  try { entryUrl = new URL(input.value.trim()); if (entryUrl.protocol !== 'https:') throw new Error('Only HTTPS URLs can be imported.'); }
+  catch (error) { setImportStatus(error.message || 'Enter a valid HTTPS URL.', true); return; }
+  const inspect = document.getElementById('inspect-import-btn'); const cancel = document.getElementById('cancel-import-btn');
+  importController?.abort(); importController = new AbortController(); inspect.disabled = true; cancel.hidden = false;
+  try {
+    setImportStatus('Fetching entry page…');
+    const entryResponse = await fetch(entryUrl.href, { credentials: 'omit', signal: importController.signal });
+    if (!entryResponse.ok) throw new Error(`The URL returned ${entryResponse.status}.`);
+    if (!/^(?:text\/html|application\/xhtml\+xml|$)/.test(mimeType(entryResponse, 'text/html'))) throw new Error('The URL did not return an HTML document.');
+    const entryHtml = await entryResponse.text();
+    if (new Blob([entryHtml]).size > MAX_IMPORT_FILE_BYTES) throw new Error('The entry document exceeds the 1 MiB import limit.');
+    const finalUrl = new URL(entryResponse.url);
+    const doc = new DOMParser().parseFromString(entryHtml, 'text/html');
+    const warnings = [];
+    let manifest = null;
+    const manifestLink = doc.querySelector('link[rel~="manifest"][href]');
+    if (manifestLink) {
+      const manifestUrl = sourceUrl(manifestLink.getAttribute('href'), finalUrl.href);
+      if (manifestUrl) try {
+        const response = await fetch(manifestUrl.href, { credentials: 'omit', signal: importController.signal });
+        if (response.ok) manifest = await response.json(); else warnings.push(`Manifest returned ${response.status}.`);
+      } catch { warnings.push('Manifest could not be read; using document metadata.'); }
+    }
+    const resources = new Map(), queue = documentResourceUrls(doc, finalUrl.href), queued = new Set(queue.map(url => url.href)), usedPaths = new Set(['index.html']);
+    doc.querySelectorAll('script:not([src])').forEach(script => extractJavaScriptUrls(script.textContent || '', finalUrl.href).forEach(url => { if (!queued.has(url.href)) { queued.add(url.href); queue.push(url); } }));
+    let totalBytes = new Blob([entryHtml]).size;
+    while (queue.length) {
+      if (resources.size >= MAX_IMPORT_FILES) { warnings.push(`Stopped after ${MAX_IMPORT_FILES} files.`); break; }
+      const url = queue.shift();
+      if (url.origin !== finalUrl.origin) { warnings.push(`External dependency left remote: ${url.href}`); continue; }
+      setImportStatus(`Capturing ${resources.size + 1} files…`);
+      try {
+        const response = await fetch(url.href, { credentials: 'omit', signal: importController.signal });
+        if (!response.ok) { warnings.push(`Skipped ${url.href} (${response.status}).`); continue; }
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (bytes.byteLength > MAX_IMPORT_FILE_BYTES) { warnings.push(`Skipped oversized file: ${url.href}`); continue; }
+        if (totalBytes + bytes.byteLength > MAX_IMPORT_BYTES) { warnings.push('Stopped at the 8 MiB snapshot limit.'); break; }
+        const type = mimeType(response); const path = importPathForUrl(url, usedPaths);
+        const resource = { url: url.href, path, type, bytes }; resources.set(url.href, resource); totalBytes += bytes.byteLength;
+        if (isTextMimeType(type)) {
+          const text = new TextDecoder().decode(bytes); resource.text = text;
+          const childUrls = /css/i.test(type) ? extractCssUrls(text, url.href) : /(?:javascript|ecmascript)/i.test(type) ? extractJavaScriptUrls(text, url.href) : [];
+          childUrls.forEach(child => { if (!queued.has(child.href)) { queued.add(child.href); queue.push(child); } });
+        }
+      } catch (error) {
+        if (error.name === 'AbortError') throw error;
+        warnings.push(`Could not capture ${url.href}.`);
+      }
+    }
+    const files = {};
+    for (const resource of resources.values()) {
+      const bytes = resource.text === undefined ? resource.bytes : new TextEncoder().encode(/css/i.test(resource.type) ? rewriteCss(resource.text, resource.url, resource.path, resources) : /(?:javascript|ecmascript)/i.test(resource.type) ? rewriteJavaScript(resource.text, resource.url, resource.path, resources) : resource.text);
+      files[resource.path] = { base64: bytesToBase64(bytes), type: resource.type, size: bytes.byteLength, hash: await hashBytes(bytes) };
+    }
+    const title = manifest?.short_name || manifest?.name || doc.querySelector('title')?.textContent || finalUrl.hostname;
+    const id = importedTabId(title); const label = importedLabel(title); const projectId = crypto.randomUUID();
+    const html = rewriteDocument(doc, finalUrl.href, resources);
+    pendingImport = {
+      id, label, html, shared: true,
+      project: { schemaVersion: 1, projectId, entryPath: 'index.html', sourceUrl: entryUrl.href, finalUrl: finalUrl.href, importedAt: new Date().toISOString(), manifest: manifest && typeof manifest === 'object' ? { name: manifest.name, short_name: manifest.short_name, display: manifest.display, scope: manifest.scope, start_url: manifest.start_url } : null, files, warnings }
+    };
+    document.getElementById('import-preview-output').value = `${label} · ${Object.keys(files).length + 1} files · ${(totalBytes / 1024).toFixed(1)} KiB${warnings.length ? ` · ${warnings.length} warning${warnings.length === 1 ? '' : 's'}` : ''}`;
+    document.getElementById('import-preview').classList.add('visible');
+    setImportStatus(warnings.length ? warnings.join(' ') : 'Ready to import.');
+  } catch (error) {
+    setImportStatus(error.name === 'AbortError' ? 'Import inspection cancelled.' : `Could not inspect this PWA: ${error.message}. The site may block browser CORS requests.`, true);
+  } finally {
+    importController = null; inspect.disabled = false; cancel.hidden = true;
+  }
+}
+async function ensureProjectServiceWorker() {
+  if (!('serviceWorker' in navigator)) throw new Error('This browser does not support the service worker needed for offline PWA snapshots.');
+  await navigator.serviceWorker.ready;
+  if (navigator.serviceWorker.controller) return;
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error('The offline importer is still starting. Retry in a moment.')), 5000);
+    navigator.serviceWorker.addEventListener('controllerchange', () => { clearTimeout(timeout); resolve(); }, { once: true });
+  });
+}
+async function importPwaSnapshot() {
+  if (!pendingImport) return;
+  const tab = clone(pendingImport); const button = document.getElementById('confirm-import-btn'); button.disabled = true;
+  try {
+    await ensureProjectServiceWorker();
+    await commitTabMutation([...getTabs(), tab], tab, `Imported PWA snapshot from ${tab.project.finalUrl}`, null, tab);
+    renderNavTabs(); activateTab(tab.id); closeImportModal();
+    addMessage('system', `Imported PWA snapshot "${tab.label}" (${Object.keys(tab.project.files).length + 1} files).`);
+  } catch (error) { setImportStatus(`Could not save the snapshot: ${error.message}`, true); }
+  finally { button.disabled = false; }
+}
+
 function base64UrlEncode(value) {
   const bytes = new TextEncoder().encode(value);
   let binary = '';
@@ -1325,11 +1685,17 @@ function base64UrlDecode(value) {
 function validSharedTabVersion(version) {
   const tab = version?.tab;
   return tab && typeof tab.id === 'string' && typeof tab.label === 'string' && typeof tab.html === 'string'
+    && (tab.project === undefined || validBundledProject(tab.project))
     && typeof version.currentHash === 'string'
     && (typeof version.previousHash === 'string' || version.previousHash === null)
     && typeof version.prompt === 'string'
     && (version.publishedAt === undefined || typeof version.publishedAt === 'string')
     && (version.appId === undefined || typeof version.appId === 'string');
+}
+
+function validBundledProject(project) {
+  if (!project || project.schemaVersion !== 1 || typeof project.projectId !== 'string' || !normalizeProjectPath(project.entryPath) || typeof project.sourceUrl !== 'string' || typeof project.finalUrl !== 'string' || !project.files || typeof project.files !== 'object' || Array.isArray(project.files)) return false;
+  return Object.entries(project.files).every(([path, file]) => normalizeProjectPath(path) && path !== project.entryPath && file && typeof file.base64 === 'string' && typeof file.type === 'string' && Number.isSafeInteger(file.size) && file.size >= 0 && typeof file.hash === 'string');
 }
 
 function getSharedTabVersions(sharedDocument) {
@@ -1343,7 +1709,7 @@ async function makeSharedTabVersion(tab, parentHash = undefined, appId = ensureI
   const currentHash = await hashTabVersion(tab);
   const latestSnapshot = getHistory().find(snapshot => snapshot.tabId === tab.id && snapshot.currentHash === currentHash);
   return {
-    tab: { id: tab.id, label: tab.label, html: tab.html },
+    tab: { id: tab.id, label: tab.label, html: tab.html, ...(isBundledTab(tab) ? { project: clone(tab.project) } : {}) },
     currentHash: latestSnapshot?.currentHash ?? currentHash,
     previousHash: parentHash ?? latestSnapshot?.previousHash ?? null,
     prompt: latestSnapshot?.prompt ?? 'Published shared tab',
@@ -1503,12 +1869,14 @@ async function importSharedTab() {
     const index = tabs.findIndex(item => item.id === tab.id);
     const previousTab = index >= 0 ? tabs[index] : null;
     const importedTab = { ...tab, shared: true };
+    if (isBundledTab(importedTab)) await ensureProjectServiceWorker();
     if (index >= 0) tabs[index] = importedTab; else tabs.push(importedTab);
     await commitTabMutation(tabs, importedTab, sharedVersion.prompt, previousTab, importedTab);
     const iframe = tabIframes[tab.id] || document.querySelector(`#pane-${CSS.escape(tab.id)} iframe`);
     if (iframe) {
       iframe.setAttribute('sandbox', 'allow-scripts allow-forms allow-modals');
-      iframe.srcdoc = tab.html;
+      if (isBundledTab(importedTab)) { iframe.removeAttribute('srcdoc'); iframe.src = projectEntryUrl(importedTab); }
+      else iframe.srcdoc = tab.html;
     }
     refreshTabsFromDatabase();
     activateTab(tab.id);
@@ -1840,6 +2208,12 @@ async function init() {
 
   // Sharing
   document.getElementById('share-btn').onclick = openShareModal;
+  document.getElementById('import-btn').onclick = openImportModal;
+  document.getElementById('inspect-import-btn').onclick = inspectPwaUrl;
+  document.getElementById('cancel-import-btn').onclick = () => importController?.abort();
+  document.getElementById('confirm-import-btn').onclick = importPwaSnapshot;
+  document.getElementById('import-url-input').oninput = resetImportPreview;
+  document.getElementById('import-url-input').onkeydown = event => { if (event.key === 'Enter') { event.preventDefault(); inspectPwaUrl(); } };
   document.getElementById('publish-gist-btn').onclick = publishSelectedTabToGist;
   document.getElementById('github-token-input').onchange = function() {
     const token = this.value.trim();
