@@ -1110,6 +1110,13 @@ function buildAPIMessages() {
   ];
 }
 
+function inferenceNetworkError(error, endpoint) {
+  let provider = endpoint;
+  try { provider = new URL(endpoint).origin; } catch {}
+  const reason = error?.message ? ` (${error.message})` : '';
+  return `Could not reach ${provider} from this browser${reason}. The provider may be offline, or may block browser CORS requests. It must allow ${location.origin} and the Authorization and Content-Type headers. Choose a CORS-enabled provider or use a same-origin proxy.`;
+}
+
 async function callLLM() {
   const apiKey = document.getElementById('api-key-input').value;
   const model   = document.getElementById('model-select').value;
@@ -1144,7 +1151,7 @@ async function callLLM() {
     try { await new Promise(r => setTimeout(r, 500)); response = await fetch(url, opts); }
     catch (e2) {
       if (e2.name === 'AbortError') { addMessage('error', timedOut ? `Request timed out after ${getTimeoutMin()} min.` : 'Cancelled.'); return null; }
-      addMessage('error', `Network error: ${e2.message}`); return null;
+      addMessage('error', inferenceNetworkError(e2, url)); return null;
     }
   } finally { clearTimeout(timeoutId); }
   abortController = null;
