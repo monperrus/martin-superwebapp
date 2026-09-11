@@ -463,6 +463,7 @@ body {
           <select id="share-type-select">
             <option value="gist">Gist</option>
             <option value="github">GitHub</option>
+            <option value="copy">Copy’n’paste</option>
             <option value="pwa">PWA</option>
           </select>
         </label>
@@ -471,6 +472,12 @@ body {
         </div>
         <div class="share-actions" id="share-github-actions" hidden>
           <button class="btn-small" id="commit-github-btn">Commit current version to GitHub</button>
+        </div>
+        <div class="share-actions" id="share-copy-actions" hidden>
+          <button class="btn-small" id="copy-tab-html-btn">Copy complete HTML</button>
+        </div>
+        <div class="share-result" id="share-copy-result">
+          <label>Paste into Replace a tab <textarea id="copy-tab-html-output" readonly></textarea></label>
         </div>
         <p class="share-note" id="share-pwa-note" hidden>PWA sharing is not implemented yet.</p>
         <label id="github-token-field">GitHub token (needed to share or commit)
@@ -1848,17 +1855,24 @@ function renderShareType() {
   const hasTabs = getTabs().length > 0;
   document.getElementById('share-gist-actions').hidden = type !== 'gist';
   document.getElementById('share-github-actions').hidden = type !== 'github';
+  document.getElementById('share-copy-actions').hidden = type !== 'copy';
   document.getElementById('share-pwa-note').hidden = type !== 'pwa';
-  document.getElementById('github-token-field').hidden = type === 'pwa';
+  document.getElementById('github-token-field').hidden = type === 'pwa' || type === 'copy';
   document.getElementById('native-share-actions').hidden = type !== 'gist';
   document.getElementById('share-result').classList.toggle('visible', type === 'gist' && !!document.getElementById('share-link-output').value);
+  document.getElementById('share-copy-result').classList.toggle('visible', type === 'copy' && hasTabs);
   document.getElementById('publish-gist-btn').disabled = !hasTabs;
   document.getElementById('commit-github-btn').disabled = !hasTabs;
+  document.getElementById('copy-tab-html-btn').disabled = !hasTabs;
+  const tab = getTabs().find(item => item.id === document.getElementById('share-tab-select').value);
+  document.getElementById('copy-tab-html-output').value = tab?.html || '';
   document.getElementById('share-type-note').textContent = type === 'gist'
     ? 'Gist publishes a public, versioned tab document. It needs Gists: read/write permission.'
     : type === 'github'
       ? `GitHub commits the selected version to ${GITHUB_APPS_OWNER}/${GITHUB_APPS_REPO}. It needs Contents: read/write permission.`
-      : 'PWA sharing is not implemented yet.';
+      : type === 'copy'
+        ? (isBundledTab(tab) ? 'Copy’n’paste shares the entry HTML only; use Gist to preserve this imported PWA’s extra files.' : 'Copy complete HTML, then use Paste to replace a tab in another Super Webapp.')
+        : 'PWA sharing is not implemented yet.';
 }
 
 function openShareModal() {
@@ -1946,6 +1960,19 @@ async function commitSelectedTabToGithub() {
     timestamp: Date.now(), tab, prompt: 'Shared from the Share panel', hashAlgorithm: 'SHA-256', previousHash: null, currentHash
   };
   await commitHistorySnapshot(snapshot, document.getElementById('commit-github-btn'));
+}
+
+async function copySelectedTabHtml() {
+  const tab = getTabs().find(item => item.id === document.getElementById('share-tab-select').value);
+  if (!tab) return;
+  const button = document.getElementById('copy-tab-html-btn');
+  try {
+    await navigator.clipboard.writeText(tab.html);
+  } catch {
+    const output = document.getElementById('copy-tab-html-output'); output.focus(); output.select(); document.execCommand('copy');
+  }
+  const originalText = button.textContent; button.textContent = 'Copied ✓';
+  setTimeout(() => { button.textContent = originalText; }, 1500);
 }
 
 async function importSharedTab() {
@@ -2320,8 +2347,10 @@ async function init() {
   document.getElementById('import-url-input').oninput = resetImportPreview;
   document.getElementById('import-url-input').onkeydown = event => { if (event.key === 'Enter') { event.preventDefault(); inspectPwaUrl(); } };
   document.getElementById('share-type-select').onchange = renderShareType;
+  document.getElementById('share-tab-select').onchange = renderShareType;
   document.getElementById('publish-gist-btn').onclick = publishSelectedTabToGist;
   document.getElementById('commit-github-btn').onclick = commitSelectedTabToGithub;
+  document.getElementById('copy-tab-html-btn').onclick = copySelectedTabHtml;
   document.getElementById('github-token-input').onchange = function() {
     const token = this.value.trim();
     if (token) localStorage.setItem(GITHUB_TOKEN_KEY, token);
