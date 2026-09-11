@@ -431,17 +431,28 @@ body {
       <span>Share a tab</span>
       <button class="btn-small" onclick="closeShareModal()">✕</button>
     </div>
-    <div class="modal-body">
+      <div class="modal-body">
       <div class="share-form">
         <label>Tab <select id="share-tab-select"></select></label>
-        <div class="share-actions">
+        <label>Share type
+          <select id="share-type-select">
+            <option value="gist">Gist</option>
+            <option value="github">GitHub</option>
+            <option value="pwa">PWA</option>
+          </select>
+        </label>
+        <div class="share-actions" id="share-gist-actions">
           <button class="btn-small" id="publish-gist-btn">Publish public GitHub Gist</button>
         </div>
+        <div class="share-actions" id="share-github-actions" hidden>
+          <button class="btn-small" id="commit-github-btn">Commit current version to GitHub</button>
+        </div>
+        <p class="share-note" id="share-pwa-note" hidden>PWA sharing is not implemented yet.</p>
         <label id="github-token-field">GitHub token (needed to share or commit)
           <input id="github-token-input" type="password" autocomplete="off" placeholder="Token with Gists and repository Contents write access">
         </label>
-        <p class="share-note">The token is stored only in this browser to prefill future publishes and history commits. Sharing needs Gists: read/write; committing needs access to monperrus/mws_apps with Contents: read/write.</p>
-        <div class="share-actions"><button class="btn-small" id="native-share-btn" hidden>Share</button></div>
+        <p class="share-note" id="share-type-note">Gist publishes a public, versioned tab document. It needs Gists: read/write permission.</p>
+        <div class="share-actions" id="native-share-actions"><button class="btn-small" id="native-share-btn" hidden>Share</button></div>
         <div class="share-result" id="share-result">
           <label>Share link <input id="share-link-output" type="text" readonly></label>
           <button class="btn-small" id="copy-share-link-btn">Copy link</button>
@@ -1772,6 +1783,24 @@ function showShareLink(publicTabUrl) {
   return link;
 }
 
+function renderShareType() {
+  const type = document.getElementById('share-type-select').value;
+  const hasTabs = getTabs().length > 0;
+  document.getElementById('share-gist-actions').hidden = type !== 'gist';
+  document.getElementById('share-github-actions').hidden = type !== 'github';
+  document.getElementById('share-pwa-note').hidden = type !== 'pwa';
+  document.getElementById('github-token-field').hidden = type === 'pwa';
+  document.getElementById('native-share-actions').hidden = type !== 'gist';
+  document.getElementById('share-result').classList.toggle('visible', type === 'gist' && !!document.getElementById('share-link-output').value);
+  document.getElementById('publish-gist-btn').disabled = !hasTabs;
+  document.getElementById('commit-github-btn').disabled = !hasTabs;
+  document.getElementById('share-type-note').textContent = type === 'gist'
+    ? 'Gist publishes a public, versioned tab document. It needs Gists: read/write permission.'
+    : type === 'github'
+      ? `GitHub commits the selected version to ${GITHUB_APPS_OWNER}/${GITHUB_APPS_REPO}. It needs Contents: read/write permission.`
+      : 'PWA sharing is not implemented yet.';
+}
+
 function openShareModal() {
   const select = document.getElementById('share-tab-select');
   select.replaceChildren();
@@ -1783,9 +1812,10 @@ function openShareModal() {
     option.selected = tab.id === activeTab;
     select.appendChild(option);
   });
-  document.getElementById('publish-gist-btn').disabled = !tabs.length;
   const token = localStorage.getItem(GITHUB_TOKEN_KEY) || '';
   document.getElementById('github-token-input').value = token;
+  document.getElementById('share-type-select').value = 'gist';
+  renderShareType();
   document.getElementById('share-modal').classList.add('open');
 }
 
@@ -1843,6 +1873,19 @@ async function publishSelectedTabToGist() {
     button.disabled = false;
     button.textContent = 'Publish public GitHub Gist';
   }
+}
+
+async function commitSelectedTabToGithub() {
+  const tab = getTabs().find(item => item.id === document.getElementById('share-tab-select').value);
+  if (!tab) { alert('Choose a tab to commit.'); return; }
+  const token = document.getElementById('github-token-input').value.trim();
+  if (token) localStorage.setItem(GITHUB_TOKEN_KEY, token);
+  else localStorage.removeItem(GITHUB_TOKEN_KEY);
+  const currentHash = await hashTabVersion(tab);
+  const snapshot = getHistory().find(entry => entry.tabId === tab.id && entry.currentHash === currentHash) || {
+    timestamp: Date.now(), tab, prompt: 'Shared from the Share panel', hashAlgorithm: 'SHA-256', previousHash: null, currentHash
+  };
+  await commitHistorySnapshot(snapshot, document.getElementById('commit-github-btn'));
 }
 
 async function importSharedTab() {
@@ -2214,7 +2257,9 @@ async function init() {
   document.getElementById('confirm-import-btn').onclick = importPwaSnapshot;
   document.getElementById('import-url-input').oninput = resetImportPreview;
   document.getElementById('import-url-input').onkeydown = event => { if (event.key === 'Enter') { event.preventDefault(); inspectPwaUrl(); } };
+  document.getElementById('share-type-select').onchange = renderShareType;
   document.getElementById('publish-gist-btn').onclick = publishSelectedTabToGist;
+  document.getElementById('commit-github-btn').onclick = commitSelectedTabToGithub;
   document.getElementById('github-token-input').onchange = function() {
     const token = this.value.trim();
     if (token) localStorage.setItem(GITHUB_TOKEN_KEY, token);
